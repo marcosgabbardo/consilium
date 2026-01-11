@@ -58,6 +58,7 @@ The name comes from Latin *consilium* ("council" or "deliberation"), reflecting 
 - **13 Investor Personalities** — Each with distinct investment philosophies, from value investing to growth, momentum, macro, and **quantitative** strategies
 - **7 Specialist Agents** — Quantitative analysis covering valuation, fundamentals, technicals, sentiment, risk, portfolio fit, and **political risk**
 - **Weighted Consensus Algorithm** — Agents vote with configurable weights and confidence levels
+- **Watchlist Management** — Create, manage, and batch-analyze stock watchlists
 - **Analysis History** — All analyses automatically saved to MySQL with full tracking
 - **International Markets** — Support for global exchanges (US, Brazil `.SA`, Europe, Asia)
 - **Parallel Execution** — Async architecture for fast multi-agent analysis
@@ -256,6 +257,58 @@ consilium agents list --type specialist
 
 # Agent details
 consilium agents info buffett
+```
+
+### Watchlist Management
+
+Organize your stocks into watchlists for easier tracking and batch analysis.
+
+```bash
+# Create a new watchlist
+consilium watchlist create tech-giants AAPL MSFT GOOGL NVDA META
+consilium watchlist create value-picks BRK-B JNJ PG KO -d "Dividend aristocrats"
+
+# List all watchlists
+consilium watchlist list
+
+# Show watchlist details
+consilium watchlist show tech-giants
+
+# Add tickers to existing watchlist
+consilium watchlist add tech-giants AMZN TSLA
+
+# Remove tickers from watchlist
+consilium watchlist remove tech-giants META
+
+# Analyze all tickers in a watchlist
+consilium watchlist analyze tech-giants
+consilium watchlist analyze tech-giants --verbose
+consilium watchlist analyze tech-giants --agents buffett,munger
+
+# Delete a watchlist
+consilium watchlist delete old-list
+consilium watchlist delete old-list --force  # Skip confirmation
+```
+
+**Example Output:**
+
+```
+                               Watchlists
+┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━┓
+┃ Name         ┃ Description           ┃ Created    ┃ Updated    ┃
+┡━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━┩
+│ tech-giants  │ -                     │ 2026-01-11 │ 2026-01-11 │
+│ value-picks  │ Dividend aristocrats  │ 2026-01-11 │ 2026-01-11 │
+└──────────────┴───────────────────────┴────────────┴────────────┘
+
+╭─────────────────────── Watchlist: tech-giants ────────────────────────╮
+│ Description: Big tech companies                                       │
+│ Tickers: 5                                                            │
+│ Created: 2026-01-11 14:38                                             │
+│ Updated: 2026-01-11 14:39                                             │
+│                                                                       │
+│ AAPL, MSFT, GOOGL, NVDA, AMZN                                         │
+╰───────────────────────────────────────────────────────────────────────╯
 ```
 
 ### System Commands
@@ -555,7 +608,8 @@ consilium analyze PETR3      # Wrong - will get 404
 - [x] Political risk analysis
 - [x] Jim Simons quantitative agent
 - [x] International market support
-- [ ] Watchlist management with scheduled analysis
+- [x] Watchlist management (CRUD + batch analysis)
+- [ ] Stock universes (S&P 500, NASDAQ 100, etc.)
 - [ ] Backtesting engine
 - [ ] Portfolio optimization recommendations
 - [ ] Screening based on agent criteria
