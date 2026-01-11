@@ -184,6 +184,133 @@ def analyze(
 
 
 @app.command()
+def compare(
+    tickers: str = typer.Argument(
+        ...,
+        help="Ticker symbols to compare (comma-separated, e.g., 'AAPL,MSFT,GOOGL')",
+    ),
+    sort: str = typer.Option(
+        "score",
+        "--sort",
+        "-s",
+        help="Sort by: score, agreement, bullish, confidence",
+    ),
+    agents: Optional[str] = typer.Option(
+        None,
+        "--agents",
+        "-a",
+        help="Specific agents to use (comma-separated IDs)",
+    ),
+    matrix: bool = typer.Option(
+        False,
+        "--matrix",
+        "-m",
+        help="Show agent consensus matrix",
+    ),
+    themes: bool = typer.Option(
+        False,
+        "--themes",
+        "-t",
+        help="Show themes/risks comparison",
+    ),
+    skip_specialists: bool = typer.Option(
+        False,
+        "--skip-specialists",
+        help="Skip specialist analysis phase",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show all comparison views",
+    ),
+) -> None:
+    """
+    Compare multiple assets side-by-side.
+
+    Analyzes all tickers and displays a ranked comparison with
+    consensus signals, scores, and agent agreement.
+
+    Examples:
+        consilium compare AAPL,MSFT,GOOGL
+        consilium compare AAPL,MSFT,GOOGL --sort agreement
+        consilium compare NVDA,AMD,INTC --matrix --themes
+        consilium compare "TSLA,F,GM" --agents buffett,munger --verbose
+    """
+    settings = get_settings()
+
+    if not settings.is_configured:
+        console.print(
+            "[red]Error:[/red] ANTHROPIC_API_KEY not configured. "
+            "Please set it in your .env file or environment."
+        )
+        raise typer.Exit(1)
+
+    # Parse tickers
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+
+    if len(ticker_list) < 2:
+        console.print("[red]Error:[/red] Need at least 2 tickers to compare.")
+        raise typer.Exit(1)
+
+    agent_filter = [a.strip().lower() for a in agents.split(",")] if agents else None
+
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from consilium.analysis.orchestrator import AnalysisOrchestrator
+    from consilium.output.comparison import ComparisonFormatter
+
+    console.print(
+        Panel(
+            f"[bold]Comparing:[/bold] {', '.join(ticker_list)}\n"
+            f"[bold]Sort By:[/bold] {sort}\n"
+            f"[bold]Agents:[/bold] {', '.join(agent_filter) if agent_filter else 'All'}\n"
+            f"[bold]Specialists:[/bold] {'Disabled' if skip_specialists else 'Enabled'}",
+            title="Comparison Request",
+            border_style="blue",
+        )
+    )
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Analyzing assets...", total=None)
+
+        async def run_analysis():
+            from consilium.db.connection import close_pool
+
+            try:
+                orchestrator = AnalysisOrchestrator(
+                    settings=settings,
+                    progress_callback=lambda msg: progress.update(task, description=msg),
+                )
+                return await orchestrator.analyze(
+                    tickers=ticker_list,
+                    agent_filter=agent_filter,
+                    include_specialists=not skip_specialists,
+                )
+            finally:
+                await close_pool()
+
+        try:
+            result = asyncio.run(run_analysis())
+        except Exception as e:
+            console.print(f"\n[red]Error during analysis:[/red] {e}")
+            raise typer.Exit(1)
+
+    # Display comparison
+    formatter = ComparisonFormatter(console)
+    formatter.display_comparison(
+        result,
+        sort_by=sort,
+        show_matrix=matrix,
+        show_themes=themes,
+        verbose=verbose,
+    )
+
+
+@app.command()
 def screen(
     criteria: str = typer.Option(
         "value",

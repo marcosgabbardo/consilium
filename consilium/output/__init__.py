@@ -1,6 +1,13 @@
 """Output formatting and export utilities."""
 
+from consilium.output.comparison import ComparisonFormatter
+from consilium.output.exporters import CSVExporter, JSONExporter, MarkdownExporter
 from consilium.output.formatters import ResultFormatter
-from consilium.output.exporters import JSONExporter, CSVExporter, MarkdownExporter
 
-__all__ = ["ResultFormatter", "JSONExporter", "CSVExporter", "MarkdownExporter"]
+__all__ = [
+    "ComparisonFormatter",
+    "CSVExporter",
+    "JSONExporter",
+    "MarkdownExporter",
+    "ResultFormatter",
+]

@@ -243,6 +243,65 @@ consilium analyze AMZN --export csv -o analysis.csv
 consilium analyze AMZN --export md -o analysis.md
 ```
 
+### Asset Comparison
+
+Compare multiple assets side-by-side with ranked comparisons and agent consensus matrices.
+
+```bash
+# Basic comparison (ranked by score)
+consilium compare AAPL,MSFT,GOOGL
+
+# Sort by different metrics
+consilium compare AAPL,MSFT,GOOGL --sort score      # Default: weighted score
+consilium compare AAPL,MSFT,GOOGL --sort agreement  # Agent agreement ratio
+consilium compare AAPL,MSFT,GOOGL --sort bullish    # Buy vote count
+
+# Show agent consensus matrix (who voted what)
+consilium compare NVDA,AMD,INTC --matrix
+
+# Show themes/risks comparison
+consilium compare TSLA,F,GM --themes
+
+# Full verbose output (all views)
+consilium compare AAPL,MSFT,GOOGL,NVDA --verbose
+
+# Filter specific agents
+consilium compare AAPL,MSFT --agents buffett,munger,simons --verbose
+```
+
+**Example Output:**
+
+```
+╭──────────────────────────── Consilium Compare ────────────────────────────╮
+│ Comparison Analysis                                                        │
+│ Tickers: AAPL, MSFT, GOOGL, NVDA                                          │
+│ Agents: 13 | Time: 45.2s                                                   │
+╰────────────────────────────────────────────────────────────────────────────╯
+
+            Asset Comparison (sorted by score)
+┏━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ Rank ┃ Ticker ┃ Signal     ┃ Score  ┃ Confidence ┃ Agreement ┃ Votes          ┃
+┡━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 1    │ NVDA   │ STRONG_BUY │ 78.5   │ VERY_HIGH  │ 92%       │ 11B 1H 1S      │
+│ 2    │ MSFT   │ BUY        │ 52.3   │ HIGH       │ 85%       │ 9B 3H 1S       │
+│ 3    │ AAPL   │ HOLD       │ 12.1   │ MEDIUM     │ 62%       │ 5B 6H 2S       │
+│ 4    │ GOOGL  │ HOLD       │ 8.7    │ MEDIUM     │ 58%       │ 4B 7H 2S       │
+└──────┴────────┴────────────┴────────┴────────────┴───────────┴────────────────┘
+
+Winner: NVDA with STRONG_BUY signal and 92% agreement
+
+                Agent Consensus Matrix
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━┓
+┃ Agent               ┃ NVDA   ┃ MSFT   ┃ AAPL   ┃ GOOGL  ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━┩
+│ Warren Buffett      │ BUY    │ BUY    │ HOLD   │ HOLD   │
+│ Charlie Munger      │ BUY    │ BUY    │ BUY    │ HOLD   │
+│ Peter Lynch         │ S_BUY  │ BUY    │ BUY    │ BUY    │
+│ Michael Burry       │ HOLD   │ SELL   │ SELL   │ SELL   │
+│ Jim Simons          │ S_BUY  │ BUY    │ HOLD   │ HOLD   │
+└─────────────────────┴────────┴────────┴────────┴────────┘
+```
+
 ### Agent Management
 
 ```bash
