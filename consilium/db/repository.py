@@ -404,8 +404,8 @@ class AgentConfigRepository:
         await self._pool.execute(
             """
             INSERT INTO agent_config (agent_id, weight)
-            VALUES (%s, %s)
-            ON DUPLICATE KEY UPDATE weight = VALUES(weight)
+            VALUES (%s, %s) AS new_values
+            ON DUPLICATE KEY UPDATE weight = new_values.weight
             """,
             (agent_id, float(weight)),
         )
@@ -415,8 +415,8 @@ class AgentConfigRepository:
         await self._pool.execute(
             """
             INSERT INTO agent_config (agent_id, enabled)
-            VALUES (%s, %s)
-            ON DUPLICATE KEY UPDATE enabled = VALUES(enabled)
+            VALUES (%s, %s) AS new_values
+            ON DUPLICATE KEY UPDATE enabled = new_values.enabled
             """,
             (agent_id, enabled),
         )
@@ -446,9 +446,9 @@ class PriceHistoryRepository:
                     """
                     INSERT INTO price_history
                     (ticker, date, open, high, low, close, adj_close, volume)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) AS new_values
                     ON DUPLICATE KEY UPDATE
-                    close = VALUES(close), adj_close = VALUES(adj_close), volume = VALUES(volume)
+                    close = new_values.close, adj_close = new_values.adj_close, volume = new_values.volume
                     """,
                     (
                         ticker.upper(),
@@ -553,10 +553,10 @@ class UniverseRepository:
         _, uid = await self._pool.execute(
             """
             INSERT INTO stock_universes (name, description, tickers, source_url, ticker_count)
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s) AS new_values
             ON DUPLICATE KEY UPDATE
-            tickers = VALUES(tickers), description = VALUES(description),
-            source_url = VALUES(source_url), ticker_count = VALUES(ticker_count)
+            tickers = new_values.tickers, description = new_values.description,
+            source_url = new_values.source_url, ticker_count = new_values.ticker_count
             """,
             (
                 name.lower(),
