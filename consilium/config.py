@@ -82,6 +82,7 @@ class AgentWeights(BaseSettings):
     fisher: Decimal = Decimal("1.3")
     jhunjhunwala: Decimal = Decimal("1.0")
     druckenmiller: Decimal = Decimal("1.5")
+    simons: Decimal = Decimal("1.8")
 
     # Specialist weights
     valuation: Decimal = Decimal("1.5")
@@ -90,6 +91,7 @@ class AgentWeights(BaseSettings):
     sentiment: Decimal = Decimal("0.8")
     risk: Decimal = Decimal("1.2")
     portfolio: Decimal = Decimal("1.0")
+    political: Decimal = Decimal("1.1")
 
     def get_weight(self, agent_id: str) -> Decimal:
         """Get weight for a specific agent."""

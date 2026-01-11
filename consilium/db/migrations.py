@@ -3,7 +3,7 @@
 from consilium.db.connection import DatabasePool
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 MIGRATIONS = {
     1: """
@@ -98,6 +98,76 @@ CREATE TABLE IF NOT EXISTS api_usage (
 -- Record initial version
 INSERT INTO schema_versions (version, description) VALUES (1, 'Initial schema');
 """,
+    2: """
+-- Migration v2: Historical Tracking & Extended Analysis
+-- Adds price history, expands analysis_history, and enhances watchlists
+
+-- Add consensus columns to analysis_history
+ALTER TABLE analysis_history
+ADD COLUMN consensus_signal VARCHAR(20) NULL AFTER execution_time_ms,
+ADD COLUMN consensus_score DECIMAL(6, 2) NULL AFTER consensus_signal,
+ADD COLUMN consensus_confidence VARCHAR(20) NULL AFTER consensus_score;
+
+-- Add index for ticker-based queries on analysis
+ALTER TABLE analysis_history ADD INDEX idx_tickers ((CAST(tickers AS CHAR(255))));
+
+-- Price history for backtesting
+CREATE TABLE IF NOT EXISTS price_history (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    ticker VARCHAR(20) NOT NULL,
+    date DATE NOT NULL,
+    open DECIMAL(15, 4) NULL,
+    high DECIMAL(15, 4) NULL,
+    low DECIMAL(15, 4) NULL,
+    close DECIMAL(15, 4) NOT NULL,
+    adj_close DECIMAL(15, 4) NULL,
+    volume BIGINT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE KEY idx_ticker_date (ticker, date),
+    INDEX idx_ticker (ticker),
+    INDEX idx_date (date)
+);
+
+-- Enhance watchlists with analysis tracking
+ALTER TABLE watchlists
+ADD COLUMN last_analyzed_at TIMESTAMP NULL AFTER updated_at,
+ADD COLUMN analysis_schedule VARCHAR(20) NULL AFTER last_analyzed_at;
+
+-- Stock universes (S&P 500, NASDAQ 100, etc.)
+CREATE TABLE IF NOT EXISTS stock_universes (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    description VARCHAR(255) NULL,
+    tickers JSON NOT NULL,
+    source_url VARCHAR(500) NULL,
+    ticker_count INT NOT NULL DEFAULT 0,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    INDEX idx_name (name)
+);
+
+-- Specialist reports storage (for historical reference)
+CREATE TABLE IF NOT EXISTS specialist_reports (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    analysis_id BIGINT NOT NULL,
+    specialist_id VARCHAR(50) NOT NULL,
+    ticker VARCHAR(20) NOT NULL,
+    summary TEXT NOT NULL,
+    analysis TEXT NOT NULL,
+    score DECIMAL(5, 2) NULL,
+    metrics JSON NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (analysis_id) REFERENCES analysis_history(id) ON DELETE CASCADE,
+    INDEX idx_ticker_specialist (ticker, specialist_id),
+    INDEX idx_analysis (analysis_id)
+);
+
+-- Record version 2
+INSERT INTO schema_versions (version, description) VALUES (2, 'Historical tracking and extended analysis');
+""",
 }
 
 
@@ -152,9 +222,12 @@ async def reset_database(pool: DatabasePool) -> None:
     tables = [
         "api_usage",
         "agent_config",
-        "watchlists",
+        "specialist_reports",
         "agent_responses",
         "analysis_history",
+        "watchlists",
+        "stock_universes",
+        "price_history",
         "market_data_cache",
         "schema_versions",
     ]

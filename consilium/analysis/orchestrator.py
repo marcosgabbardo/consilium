@@ -18,6 +18,7 @@ from consilium.core.exceptions import AgentError, DataFetchError
 from consilium.data.yahoo import YahooFinanceProvider
 from consilium.data.cache import CachedDataProvider
 from consilium.db.connection import DatabasePool, get_pool
+from consilium.db.repository import HistoryRepository
 from consilium.agents.registry import AgentRegistry
 from consilium.agents.base import InvestorAgent, SpecialistAgent
 from consilium.analysis.consensus import ConsensusAlgorithm
@@ -42,12 +43,14 @@ class AnalysisOrchestrator:
         registry: AgentRegistry | None = None,
         consensus: ConsensusAlgorithm | None = None,
         progress_callback: Callable[[str], None] | None = None,
+        save_to_history: bool = True,
     ) -> None:
         self._settings = settings or get_settings()
         self._data_provider = data_provider
         self._registry = registry or AgentRegistry(self._settings)
         self._consensus = consensus or ConsensusAlgorithm(self._settings)
         self._progress_callback = progress_callback
+        self._save_to_history = save_to_history
 
     async def _ensure_data_provider(self) -> CachedDataProvider:
         """Ensure data provider is initialized."""
@@ -114,7 +117,7 @@ class AnalysisOrchestrator:
         completed_at = datetime.utcnow()
         execution_time = Decimal(str((completed_at - started_at).total_seconds()))
 
-        return AnalysisResult(
+        analysis_result = AnalysisResult(
             tickers=tickers,
             results=results,
             execution_time_seconds=execution_time,
@@ -122,6 +125,18 @@ class AnalysisOrchestrator:
             started_at=started_at,
             completed_at=completed_at,
         )
+
+        # Auto-save to history if enabled
+        if self._save_to_history and results:
+            try:
+                pool = await get_pool()
+                history_repo = HistoryRepository(pool)
+                analysis_id = await history_repo.save_analysis(analysis_result)
+                self._report_progress(f"Analysis saved to history (ID: {analysis_id})")
+            except Exception as e:
+                self._report_progress(f"Warning: Failed to save analysis to history: {e}")
+
+        return analysis_result
 
     async def _analyze_ticker(
         self,
@@ -155,6 +170,20 @@ class AnalysisOrchestrator:
 
         return consensus
 
+    def _is_billing_error(self, error: Exception) -> bool:
+        """Check if the error is related to API billing/credits."""
+        error_str = str(error).lower()
+        billing_keywords = [
+            "credit balance",
+            "billing",
+            "payment",
+            "subscription",
+            "quota exceeded",
+            "rate limit",
+            "insufficient funds",
+        ]
+        return any(keyword in error_str for keyword in billing_keywords)
+
     async def _run_specialists(
         self,
         stock: Stock,
@@ -162,15 +191,24 @@ class AnalysisOrchestrator:
     ) -> list[SpecialistReport]:
         """Run all specialist agents in parallel."""
         semaphore = asyncio.Semaphore(self._settings.max_concurrent_agents)
+        billing_error_shown = False
 
         async def run_with_semaphore(specialist: SpecialistAgent) -> SpecialistReport | None:
+            nonlocal billing_error_shown
             async with semaphore:
                 try:
                     return await specialist.generate_report(stock)
                 except Exception as e:
-                    self._report_progress(
-                        f"Specialist {specialist.name} failed: {e}"
-                    )
+                    if self._is_billing_error(e) and not billing_error_shown:
+                        billing_error_shown = True
+                        self._report_progress(
+                            "[API BILLING ERROR] Your Anthropic API credit balance is too low. "
+                            "Please add credits at: https://console.anthropic.com/settings/billing"
+                        )
+                    else:
+                        self._report_progress(
+                            f"Specialist {specialist.name} failed: {e}"
+                        )
                     return None
 
         tasks = [run_with_semaphore(s) for s in specialists]
@@ -186,15 +224,24 @@ class AnalysisOrchestrator:
     ) -> list[AgentResponse]:
         """Run all investor agents in parallel."""
         semaphore = asyncio.Semaphore(self._settings.max_concurrent_agents)
+        billing_error_shown = False
 
         async def run_with_semaphore(investor: InvestorAgent) -> AgentResponse | None:
+            nonlocal billing_error_shown
             async with semaphore:
                 try:
                     return await investor.analyze(stock, specialist_reports)
                 except Exception as e:
-                    self._report_progress(
-                        f"Investor {investor.name} failed: {e}"
-                    )
+                    if self._is_billing_error(e) and not billing_error_shown:
+                        billing_error_shown = True
+                        self._report_progress(
+                            "[API BILLING ERROR] Your Anthropic API credit balance is too low. "
+                            "Please add credits at: https://console.anthropic.com/settings/billing"
+                        )
+                    else:
+                        self._report_progress(
+                            f"Investor {investor.name} failed: {e}"
+                        )
                     return None
 
         tasks = [run_with_semaphore(i) for i in investors]

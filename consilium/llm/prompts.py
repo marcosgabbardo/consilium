@@ -207,6 +207,8 @@ Based on the above information and your investment philosophy, provide your anal
             return self._build_risk_prompt(stock)
         elif focus_area == "portfolio":
             return self._build_portfolio_prompt(stock)
+        elif focus_area == "political":
+            return self._build_political_prompt(stock)
         else:
             raise ValueError(f"Unknown focus area: {focus_area}")
 
@@ -392,6 +394,99 @@ As Portfolio Manager, synthesize:
 3. Entry strategy (buy now, scale in, wait for pullback)
 4. Risk management approach (stop loss levels, position limits)
 5. Portfolio fit (growth, value, income, speculative allocation)
+"""
+
+    def _build_political_prompt(self, stock: Stock) -> str:
+        """Build political risk analysis prompt."""
+        # Determine country from exchange or company info
+        country = stock.company.country or "Unknown"
+        exchange = stock.company.exchange or "Unknown"
+
+        # Check if it's a state-owned or regulated company based on sector
+        sector = stock.company.sector or "Unknown"
+        industry = stock.company.industry or "Unknown"
+
+        # Sectors with high political exposure
+        high_political_sectors = [
+            "energy", "utilities", "financial", "telecommunications",
+            "defense", "healthcare", "transportation", "mining"
+        ]
+        is_high_exposure = any(
+            s.lower() in (sector.lower() + " " + industry.lower())
+            for s in high_political_sectors
+        )
+
+        exposure_note = ""
+        if is_high_exposure:
+            exposure_note = f"""
+Note: {stock.company.name} operates in {sector}/{industry}, a sector typically subject to
+significant government regulation and political influence.
+"""
+
+        return f"""Analyze the political risk profile of {stock.ticker} ({stock.company.name}).
+
+## Company Context
+Company: {stock.company.name}
+Sector: {sector}
+Industry: {industry}
+Country: {country}
+Exchange: {exchange}
+{exposure_note}
+## Current Price Context
+Current Price: ${stock.price.current}
+Market Cap: {self._format_market_cap(stock.fundamentals.market_cap)}
+52-Week Range: ${stock.price.fifty_two_week_low} - ${stock.price.fifty_two_week_high}
+
+## Key Financial Metrics (for context)
+Dividend Yield: {self._format_pct(stock.fundamentals.dividend_yield)}
+Debt/Equity: {stock.fundamentals.debt_to_equity or 'N/A'}
+Beta: {stock.fundamentals.beta or 'N/A'}
+
+## Political Analysis Required
+
+Based on your knowledge of {country}'s political environment and {sector} sector dynamics:
+
+1. ELECTORAL CYCLE ANALYSIS
+   - Current political situation and government stability
+   - Upcoming elections (national, regional) and potential market impact
+   - Historical behavior of this company/sector during political transitions
+   - Current government's stance toward this sector
+
+2. GOVERNMENT INTERVENTION RISK
+   - Likelihood of state ownership changes or nationalization risk
+   - Price controls, subsidies, or market intervention history
+   - Political appointments risk to company leadership
+   - History of using company for political/social purposes (if any)
+
+3. REGULATORY ENVIRONMENT
+   - Pending regulatory changes that could impact the company
+   - Tax policy changes risk for this sector
+   - Licensing, concessions, or permits dependencies
+   - Antitrust or competition policy exposure
+
+4. GEOPOLITICAL FACTORS
+   - International sanctions exposure or risk
+   - Trade policy and tariff implications
+   - Export market dependencies and geopolitical tensions
+   - Supply chain geopolitical vulnerabilities
+
+5. INSTITUTIONAL STABILITY
+   - Rule of law and contract enforcement reliability
+   - Regulatory independence and corruption risk
+   - Currency and capital controls risk
+   - Property rights and shareholder protection
+
+## Output Requirements
+Provide:
+- summary: 1-2 sentence political risk assessment
+- analysis: Detailed analysis of each risk category (2-3 paragraphs)
+- score: From -100 (extreme political risk) to +100 (strong political tailwinds)
+  - -100 to -50: High political risk (avoid or reduce)
+  - -49 to -10: Elevated political risk
+  - -10 to +10: Neutral political environment
+  - +10 to +49: Favorable political environment
+  - +50 to +100: Strong political tailwinds
+- metrics: Key political risk factors with their individual assessments
 """
 
     def _format_pct(self, value: Any) -> str:

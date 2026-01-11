@@ -259,6 +259,7 @@ def agents_list(
         ("fisher", "Phil Fisher", "GROWTH", settings.weights.fisher),
         ("jhunjhunwala", "Rakesh Jhunjhunwala", "MOMENTUM", settings.weights.jhunjhunwala),
         ("druckenmiller", "Stanley Druckenmiller", "MACRO", settings.weights.druckenmiller),
+        ("simons", "Jim Simons", "QUANTITATIVE", settings.weights.simons),
     ]
 
     specialists = [
@@ -268,6 +269,7 @@ def agents_list(
         ("sentiment", "Sentiment Specialist", "QUANTITATIVE", settings.weights.sentiment),
         ("risk", "Risk Manager", "QUANTITATIVE", settings.weights.risk),
         ("portfolio", "Portfolio Manager", "QUANTITATIVE", settings.weights.portfolio),
+        ("political", "Political Risk Analyst", "QUANTITATIVE", settings.weights.political),
     ]
 
     table = Table(title="Available Agents")
@@ -400,20 +402,272 @@ def watchlist_show(
 
 @history_app.command("list")
 def history_list(
+    ticker: Optional[str] = typer.Option(
+        None,
+        "--ticker",
+        "-t",
+        help="Filter by ticker symbol",
+    ),
+    days: Optional[int] = typer.Option(
+        None,
+        "--days",
+        "-d",
+        help="Filter by number of days",
+    ),
+    signal: Optional[str] = typer.Option(
+        None,
+        "--signal",
+        "-s",
+        help="Filter by signal (STRONG_BUY, BUY, HOLD, SELL, STRONG_SELL)",
+    ),
     limit: int = typer.Option(10, "--limit", "-l", help="Number of entries to show"),
 ) -> None:
-    """Show recent analysis history."""
-    console.print(f"[cyan]Showing last {limit} analyses[/cyan]")
-    console.print("\n[yellow]History feature not yet implemented.[/yellow]")
+    """
+    Show recent analysis history.
+
+    Examples:
+        consilium history list
+        consilium history list --ticker AAPL --limit 20
+        consilium history list --days 7 --signal BUY
+    """
+    async def fetch_history():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import HistoryRepository
+
+        try:
+            pool = await get_pool()
+            repo = HistoryRepository(pool)
+            return await repo.get_history(
+                ticker=ticker,
+                days=days,
+                limit=limit,
+                signal=signal,
+            )
+        finally:
+            await close_pool()
+
+    try:
+        results = asyncio.run(fetch_history())
+    except Exception as e:
+        console.print(f"[red]Error fetching history:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not results:
+        console.print("[yellow]No analysis history found.[/yellow]")
+        return
+
+    table = Table(title="Analysis History")
+    table.add_column("Request ID", style="cyan", max_width=10)
+    table.add_column("Tickers", style="white")
+    table.add_column("Signal", style="bold")
+    table.add_column("Score", justify="right")
+    table.add_column("Confidence", style="magenta")
+    table.add_column("Date", style="dim")
+
+    signal_colors = {
+        "STRONG_BUY": "bold green",
+        "BUY": "green",
+        "HOLD": "yellow",
+        "SELL": "red",
+        "STRONG_SELL": "bold red",
+    }
+
+    for r in results:
+        tickers_str = ", ".join(r.get("tickers", [])) if r.get("tickers") else "N/A"
+        sig = r.get("consensus_signal", "N/A")
+        sig_style = signal_colors.get(sig, "white")
+        score = f"{r.get('consensus_score', 0):.1f}" if r.get("consensus_score") is not None else "N/A"
+        conf = r.get("consensus_confidence", "N/A")
+        date_str = r.get("created_at").strftime("%Y-%m-%d %H:%M") if r.get("created_at") else "N/A"
+
+        table.add_row(
+            r.get("request_id", "")[:8] + "...",
+            tickers_str[:20] + ("..." if len(tickers_str) > 20 else ""),
+            f"[{sig_style}]{sig}[/{sig_style}]",
+            score,
+            conf,
+            date_str,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Use 'consilium history show <request_id>' for details[/dim]")
 
 
 @history_app.command("show")
 def history_show(
-    request_id: str = typer.Argument(..., help="Analysis request ID"),
+    request_id: str = typer.Argument(..., help="Analysis request ID (or prefix)"),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show full agent responses",
+    ),
 ) -> None:
-    """Show details of a specific analysis."""
-    console.print(f"[cyan]Analysis ID:[/cyan] {request_id}")
-    console.print("\n[yellow]History feature not yet implemented.[/yellow]")
+    """
+    Show details of a specific analysis.
+
+    Examples:
+        consilium history show abc123
+        consilium history show abc123 --verbose
+    """
+    async def fetch_analysis():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import HistoryRepository
+
+        try:
+            pool = await get_pool()
+            repo = HistoryRepository(pool)
+            return await repo.get_analysis_by_id(request_id)
+        finally:
+            await close_pool()
+
+    try:
+        result = asyncio.run(fetch_analysis())
+    except Exception as e:
+        console.print(f"[red]Error fetching analysis:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not result:
+        console.print(f"[red]Analysis not found:[/red] {request_id}")
+        raise typer.Exit(1)
+
+    # Display summary panel
+    sig = result.get("consensus_signal", "N/A")
+    signal_colors = {
+        "STRONG_BUY": "bold green",
+        "BUY": "green",
+        "HOLD": "yellow",
+        "SELL": "red",
+        "STRONG_SELL": "bold red",
+    }
+    sig_style = signal_colors.get(sig, "white")
+
+    tickers = result.get("tickers", [])
+    panel_content = (
+        f"[bold]Tickers:[/bold] {', '.join(tickers)}\n"
+        f"[bold]Signal:[/bold] [{sig_style}]{sig}[/{sig_style}]\n"
+        f"[bold]Score:[/bold] {result.get('consensus_score', 'N/A')}\n"
+        f"[bold]Confidence:[/bold] {result.get('consensus_confidence', 'N/A')}\n"
+        f"[bold]Agents Used:[/bold] {result.get('agents_used', 'N/A')}\n"
+        f"[bold]Execution Time:[/bold] {result.get('execution_time_ms', 0) / 1000:.2f}s\n"
+        f"[bold]Date:[/bold] {result.get('created_at', 'N/A')}"
+    )
+
+    console.print(Panel(panel_content, title=f"Analysis: {request_id}", border_style="blue"))
+
+    # Show detailed results if verbose
+    if verbose and result.get("results_json"):
+        results_data = result["results_json"]
+        if results_data.get("results"):
+            for consensus in results_data["results"]:
+                console.print(f"\n[bold cyan]Ticker: {consensus.get('ticker', 'N/A')}[/bold cyan]")
+
+                # Agent responses table
+                if consensus.get("agent_responses"):
+                    table = Table(title="Agent Responses")
+                    table.add_column("Agent", style="cyan")
+                    table.add_column("Signal", style="bold")
+                    table.add_column("Confidence")
+                    table.add_column("Target", justify="right")
+
+                    for resp in consensus["agent_responses"]:
+                        ag_sig = resp.get("signal", "N/A")
+                        ag_style = signal_colors.get(ag_sig, "white")
+                        target = f"${resp.get('target_price', 0):.2f}" if resp.get("target_price") else "-"
+
+                        table.add_row(
+                            resp.get("agent_id", "N/A"),
+                            f"[{ag_style}]{ag_sig}[/{ag_style}]",
+                            resp.get("confidence", "N/A"),
+                            target,
+                        )
+
+                    console.print(table)
+
+
+@history_app.command("export")
+def history_export(
+    output_file: str = typer.Option(
+        ...,
+        "--output",
+        "-o",
+        help="Output file path",
+    ),
+    format: str = typer.Option(
+        "csv",
+        "--format",
+        "-f",
+        help="Export format: csv, json",
+    ),
+    days: Optional[int] = typer.Option(
+        30,
+        "--days",
+        "-d",
+        help="Number of days to export",
+    ),
+    ticker: Optional[str] = typer.Option(
+        None,
+        "--ticker",
+        "-t",
+        help="Filter by ticker",
+    ),
+) -> None:
+    """
+    Export analysis history to file.
+
+    Examples:
+        consilium history export -o history.csv --days 30
+        consilium history export -o history.json -f json --ticker AAPL
+    """
+    import json
+    import csv
+
+    async def fetch_history():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import HistoryRepository
+
+        try:
+            pool = await get_pool()
+            repo = HistoryRepository(pool)
+            return await repo.get_history(ticker=ticker, days=days, limit=1000)
+        finally:
+            await close_pool()
+
+    try:
+        results = asyncio.run(fetch_history())
+    except Exception as e:
+        console.print(f"[red]Error fetching history:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not results:
+        console.print("[yellow]No history to export.[/yellow]")
+        return
+
+    if format.lower() == "json":
+        # Convert datetime objects to strings
+        for r in results:
+            if r.get("created_at"):
+                r["created_at"] = r["created_at"].isoformat()
+        with open(output_file, "w") as f:
+            json.dump(results, f, indent=2, default=str)
+    elif format.lower() == "csv":
+        fieldnames = [
+            "request_id", "tickers", "consensus_signal", "consensus_score",
+            "consensus_confidence", "agents_used", "execution_time_ms", "created_at"
+        ]
+        with open(output_file, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for r in results:
+                row = {k: v for k, v in r.items() if k in fieldnames}
+                if row.get("tickers"):
+                    row["tickers"] = ",".join(row["tickers"])
+                writer.writerow(row)
+    else:
+        console.print(f"[red]Unsupported format:[/red] {format}")
+        raise typer.Exit(1)
+
+    console.print(f"[green]Exported {len(results)} records to {output_file}[/green]")
 
 
 # ============== Database Commands ==============

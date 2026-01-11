@@ -6,57 +6,60 @@
   <img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/anthropic-claude--opus--4.5-purple.svg" alt="Claude Opus 4.5">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License">
+  <img src="https://img.shields.io/badge/agents-20-orange.svg" alt="20 Agents">
 </p>
 
 ---
 
 ## Overview
 
-Consilium simulates a **hedge fund investment committee** where 18 specialized AI agents—each embodying the investment philosophy of legendary investors like Warren Buffett, Charlie Munger, and Peter Lynch—analyze stocks and reach a weighted consensus.
+Consilium simulates a **hedge fund investment committee** where 20 specialized AI agents—each embodying the investment philosophy of legendary investors like Warren Buffett, Charlie Munger, Jim Simons, and Peter Lynch—analyze stocks and reach a weighted consensus.
 
 The name comes from Latin *consilium* ("council" or "deliberation"), reflecting the collaborative decision-making process at the heart of the system.
 
 ### How It Works
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    consilium analyze AAPL                    │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    consilium analyze AAPL                        │
+└─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│              1. MARKET DATA (Yahoo Finance)                  │
-│                   Price, fundamentals, technicals            │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│              1. MARKET DATA (Yahoo Finance)                      │
+│         Price, fundamentals, technicals (cached in MySQL)        │
+└─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│              2. SPECIALIST ANALYSIS (Parallel)               │
-│     Valuation │ Fundamentals │ Technicals │ Sentiment        │
-│                      Risk │ Portfolio                        │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│              2. SPECIALIST ANALYSIS (Parallel)                   │
+│   Valuation │ Fundamentals │ Technicals │ Sentiment │ Risk      │
+│                  Portfolio │ Political Risk                      │
+└─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│              3. INVESTOR ANALYSIS (Parallel)                 │
-│  Buffett │ Munger │ Graham │ Lynch │ Burry │ Damodaran │...  │
-│         Each applies their unique investment philosophy      │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│              3. INVESTOR ANALYSIS (Parallel)                     │
+│  Buffett │ Munger │ Graham │ Lynch │ Burry │ Simons │ ...       │
+│         Each applies their unique investment philosophy          │
+└─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 4. WEIGHTED CONSENSUS                        │
-│              Final signal with confidence score              │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                 4. WEIGHTED CONSENSUS                            │
+│      Final signal with confidence score (auto-saved to DB)       │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Features
 
-- **12 Investor Personalities** — Each with distinct investment philosophies, from value investing to growth, momentum, and macro strategies
-- **6 Specialist Agents** — Quantitative analysis covering valuation, fundamentals, technicals, sentiment, risk, and portfolio fit
+- **13 Investor Personalities** — Each with distinct investment philosophies, from value investing to growth, momentum, macro, and **quantitative** strategies
+- **7 Specialist Agents** — Quantitative analysis covering valuation, fundamentals, technicals, sentiment, risk, portfolio fit, and **political risk**
 - **Weighted Consensus Algorithm** — Agents vote with configurable weights and confidence levels
+- **Analysis History** — All analyses automatically saved to MySQL with full tracking
+- **International Markets** — Support for global exchanges (US, Brazil `.SA`, Europe, Asia)
 - **Parallel Execution** — Async architecture for fast multi-agent analysis
 - **Rich CLI Output** — Beautiful tables and panels with detailed reasoning
 - **Export Formats** — JSON, CSV, and Markdown reports
@@ -66,7 +69,7 @@ The name comes from Latin *consilium* ("council" or "deliberation"), reflecting 
 
 ## The Investment Committee
 
-### Investor Agents
+### Investor Agents (13)
 
 | Agent | Style | Philosophy |
 |-------|-------|------------|
@@ -82,8 +85,9 @@ The name comes from Latin *consilium* ("council" or "deliberation"), reflecting 
 | **Mohnish Pabrai** | Value | Dhandho framework, low-risk/high-uncertainty bets |
 | **Rakesh Jhunjhunwala** | Momentum | Indian markets expertise, growth at reasonable price |
 | **Stanley Druckenmiller** | Macro | Top-down analysis, asymmetric risk/reward, position sizing |
+| **Jim Simons** | Quantitative | Mathematical models, statistical patterns, data-driven decisions |
 
-### Specialist Agents
+### Specialist Agents (7)
 
 | Specialist | Focus |
 |------------|-------|
@@ -93,6 +97,7 @@ The name comes from Latin *consilium* ("council" or "deliberation"), reflecting 
 | **Sentiment Analyst** | Market sentiment, institutional positioning, contrarian signals |
 | **Risk Manager** | Volatility, drawdown potential, systematic vs idiosyncratic risk |
 | **Portfolio Manager** | Position sizing, entry strategy, portfolio fit |
+| **Political Risk Analyst** | Electoral cycles, government intervention, geopolitical factors, regulatory risk |
 
 ---
 
@@ -139,6 +144,7 @@ CONSILIUM_DB_NAME=consilium
 # Optional: Customize agent weights (0-10 scale)
 CONSILIUM_WEIGHT_BUFFETT=2.0
 CONSILIUM_WEIGHT_MUNGER=1.8
+CONSILIUM_WEIGHT_SIMONS=1.8
 ```
 
 ### Database Setup
@@ -149,7 +155,7 @@ mysql -u root -p -e "CREATE DATABASE consilium;"
 mysql -u root -p -e "CREATE USER 'consilium'@'localhost' IDENTIFIED BY 'your_password';"
 mysql -u root -p -e "GRANT ALL PRIVILEGES ON consilium.* TO 'consilium'@'localhost';"
 
-# Initialize schema
+# Initialize schema (runs migrations)
 consilium db init
 ```
 
@@ -170,14 +176,56 @@ consilium analyze "AAPL,NVDA,MSFT"
 consilium analyze AAPL --verbose
 ```
 
+### International Markets
+
+```bash
+# Brazilian stocks (B3 exchange)
+consilium analyze PETR3.SA    # Petrobras
+consilium analyze VALE3.SA    # Vale
+consilium analyze ITUB4.SA    # Itaú
+
+# Other markets
+consilium analyze 7203.T      # Toyota (Tokyo)
+consilium analyze BMW.DE      # BMW (Frankfurt)
+consilium analyze 0700.HK     # Tencent (Hong Kong)
+```
+
 ### Filter Agents
 
 ```bash
 # Use only specific investors
 consilium analyze TSLA --agents buffett,munger,burry
 
+# Include the quantitative analyst
+consilium analyze NVDA --agents simons,burry,druckenmiller
+
 # Skip specialist analysis (faster)
 consilium analyze AAPL --skip-specialists
+# Or use the short flag
+consilium analyze AAPL -s
+```
+
+### Analysis History
+
+All analyses are automatically saved to the database for future reference.
+
+```bash
+# List recent analyses
+consilium history list
+
+# Filter by ticker
+consilium history list --ticker AAPL --limit 20
+
+# Filter by date and signal
+consilium history list --days 7 --signal BUY
+
+# Show details of a specific analysis
+consilium history show abc123
+consilium history show abc123 --verbose
+
+# Export history to file
+consilium history export -o history.csv --days 30
+consilium history export -o history.json -f json --ticker AAPL
 ```
 
 ### Export Results
@@ -204,6 +252,7 @@ consilium agents list --weights
 
 # Filter by type
 consilium agents list --type investor
+consilium agents list --type specialist
 
 # Agent details
 consilium agents info buffett
@@ -218,8 +267,50 @@ consilium status
 # Database status
 consilium db status
 
+# Initialize/update database schema
+consilium db init
+
 # Show version
 consilium --version
+```
+
+---
+
+## Political Risk Analysis
+
+The **Political Risk Analyst** is a specialized agent that evaluates political factors affecting investments:
+
+### What It Analyzes
+
+| Factor | Description |
+|--------|-------------|
+| **Electoral Cycles** | Upcoming elections, political transitions, government stability |
+| **Government Intervention** | State ownership, price controls, political appointments |
+| **Regulatory Environment** | Pending regulations, tax policy changes, licensing risks |
+| **Geopolitical Factors** | Sanctions, trade wars, export market dependencies |
+| **Institutional Stability** | Rule of law, regulatory independence, property rights |
+
+### Score Interpretation
+
+| Score Range | Interpretation |
+|-------------|----------------|
+| +50 to +100 | Political tailwinds (favorable policies, deregulation) |
+| +10 to +49 | Slightly favorable political environment |
+| -10 to +10 | Neutral political risk |
+| -49 to -10 | Elevated political risk |
+| -100 to -50 | High political risk (consider avoiding) |
+
+### Example: State-Owned Companies
+
+```bash
+# Petrobras (Brazilian state oil company) - high political exposure
+consilium analyze PETR3.SA --verbose
+
+# The Political Risk Analyst will flag:
+# - Electoral cycle risks
+# - History of government intervention
+# - Price control exposure
+# - Political appointment risks
 ```
 
 ---
@@ -266,18 +357,40 @@ weighted_score = Σ(signal_score × agent_weight × confidence_mult) / Σ(weight
 ## Example Output
 
 ```
-╭─────────────────────────────────────────────────────────────╮
-│                    Analysis: AAPL                           │
-├─────────────────────────────────────────────────────────────┤
-│  Signal: BUY          Confidence: HIGH                      │
-│  Score: +42.3         Votes: 8 Buy | 3 Hold | 1 Sell        │
-├─────────────────────────────────────────────────────────────┤
-│  Key Themes:                                                │
-│  • Strong ecosystem and customer loyalty (moat)             │
-│  • Services segment driving recurring revenue               │
-│  • Valuation stretched relative to growth                   │
-│  • China exposure and regulatory risks                      │
-╰─────────────────────────────────────────────────────────────╯
+╭────────────────────────────── Analysis Request ──────────────────────────────╮
+│ Analyzing: AAPL                                                              │
+│ Agents: All (13 investors + 7 specialists)                                   │
+│ Specialists: Enabled                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭────────────────────────────────── Summary ───────────────────────────────────╮
+│ Consilium Analysis Complete                                                  │
+│ Tickers: AAPL                                                                │
+│ Agents: 20 | Time: 45.2s                                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭──────────────────────────── Consensus: AAPL ─────────────────────────────────╮
+│ AAPL                                                                         │
+│                                                                              │
+│ Signal: BUY                                                                  │
+│ Confidence: HIGH                                                             │
+│ Score: 42.3                                                                  │
+│                                                                              │
+│ Votes: 8 Buy | 3 Hold | 2 Sell                                               │
+│ Agreement: 62%                                                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Key Themes                                                                   │
+│   - Strong ecosystem and customer loyalty (economic moat)                    │
+│   - Services segment driving high-margin recurring revenue                   │
+│   - Exceptional cash flow generation supports buybacks                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Risks                                                                        │
+│   - iPhone sales deceleration in mature markets                              │
+│   - China exposure and regulatory headwinds                                  │
+│   - Valuation premium limits upside potential                                │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ---
@@ -297,16 +410,17 @@ consilium/
 │   └── cache.py           # Cache-aside pattern with MySQL
 ├── db/
 │   ├── connection.py      # Async MySQL connection pool
-│   └── migrations.py      # Schema DDL
+│   ├── migrations.py      # Schema DDL (versioned migrations)
+│   └── repository.py      # Data access layer
 ├── agents/
 │   ├── base.py            # BaseAgent, InvestorAgent, SpecialistAgent
-│   ├── registry.py        # Agent factory and discovery
-│   ├── investors/         # 12 investor personality agents
-│   └── specialists/       # 6 specialist analysis agents
+│   └── registry.py        # Agent factory and discovery
+├── prompts/
+│   ├── investors/         # 13 investor personality YAMLs
+│   └── specialists/       # 7 specialist analysis YAMLs
 ├── llm/
 │   ├── client.py          # Async Anthropic client with retry
-│   ├── prompts.py         # Prompt templates
-│   └── schemas.py         # JSON schemas for structured output
+│   └── prompts.py         # Prompt builder with templates
 ├── analysis/
 │   ├── orchestrator.py    # Multi-agent pipeline coordination
 │   └── consensus.py       # Weighted voting algorithm
@@ -325,10 +439,12 @@ Customize how much each agent's opinion matters in the final consensus:
 
 ```bash
 # In .env file
-CONSILIUM_WEIGHT_BUFFETT=2.0   # Legendary track record
-CONSILIUM_WEIGHT_MUNGER=1.8    # Partner to Buffett
-CONSILIUM_WEIGHT_GRAHAM=1.5    # Father of value investing
-CONSILIUM_WEIGHT_WOOD=1.0      # Growth/innovation focus
+CONSILIUM_WEIGHT_BUFFETT=2.0      # Legendary track record
+CONSILIUM_WEIGHT_MUNGER=1.8       # Partner to Buffett
+CONSILIUM_WEIGHT_SIMONS=1.8       # Quantitative legend
+CONSILIUM_WEIGHT_GRAHAM=1.5       # Father of value investing
+CONSILIUM_WEIGHT_DRUCKENMILLER=1.5 # Macro master
+CONSILIUM_WEIGHT_WOOD=1.0         # Growth/innovation focus
 ```
 
 ### Cache TTLs
@@ -355,6 +471,32 @@ CONSILIUM_THRESHOLD_STRONG_SELL=-60
 
 ---
 
+## Database Schema
+
+Consilium uses MySQL with versioned migrations:
+
+```bash
+# Check current schema version
+consilium db status
+
+# Apply pending migrations
+consilium db init
+```
+
+### Tables
+
+| Table | Purpose |
+|-------|---------|
+| `analysis_history` | All analysis results with consensus |
+| `agent_responses` | Individual agent recommendations |
+| `specialist_reports` | Specialist analysis reports |
+| `market_data_cache` | Cached Yahoo Finance data |
+| `watchlists` | User-defined stock lists |
+| `price_history` | Historical price data (for backtesting) |
+| `schema_versions` | Migration tracking |
+
+---
+
 ## Tech Stack
 
 | Component | Technology |
@@ -364,15 +506,57 @@ CONSILIUM_THRESHOLD_STRONG_SELL=-60
 | LLM | Anthropic Claude Opus 4.5 |
 | Market Data | Yahoo Finance |
 | Data Validation | Pydantic v2 |
-| Database | MySQL (aiomysql) |
+| Database | MySQL 8.0 (aiomysql) |
 | Async Runtime | asyncio |
+| YAML Config | PyYAML |
+
+---
+
+## Troubleshooting
+
+### API Errors
+
+```bash
+# If you see "credit balance is too low" error
+# You need to add credits to your Anthropic account
+# Visit: https://console.anthropic.com/settings/billing
+```
+
+### Database Issues
+
+```bash
+# Reset database (WARNING: deletes all data)
+consilium db init --reset
+
+# Check connection
+consilium db status
+```
+
+### International Tickers
+
+```bash
+# Brazilian stocks need .SA suffix
+consilium analyze PETR3.SA   # Correct
+consilium analyze PETR3      # Wrong - will get 404
+
+# Common exchange suffixes:
+# .SA  - Brazil (B3)
+# .L   - London
+# .DE  - Germany (Xetra)
+# .T   - Tokyo
+# .HK  - Hong Kong
+```
 
 ---
 
 ## Roadmap
 
+- [x] Historical analysis tracking
+- [x] Political risk analysis
+- [x] Jim Simons quantitative agent
+- [x] International market support
 - [ ] Watchlist management with scheduled analysis
-- [ ] Historical analysis tracking and backtesting
+- [ ] Backtesting engine
 - [ ] Portfolio optimization recommendations
 - [ ] Screening based on agent criteria
 - [ ] Web dashboard interface
