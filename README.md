@@ -58,6 +58,7 @@ The name comes from Latin *consilium* ("council" or "deliberation"), reflecting 
 - **13 Investor Personalities** — Each with distinct investment philosophies, from value investing to growth, momentum, macro, and **quantitative** strategies
 - **7 Specialist Agents** — Quantitative analysis covering valuation, fundamentals, technicals, sentiment, risk, portfolio fit, and **political risk**
 - **Weighted Consensus Algorithm** — Agents vote with configurable weights and confidence levels
+- **Cost Estimation** — Shows estimated API costs before execution with user confirmation
 - **Stock Universe Management** — Pre-built universes (S&P 500, NASDAQ 100, Dow 30, MAG7, Brazilian) for batch analysis
 - **Watchlist Management** — Create, manage, and batch-analyze stock watchlists
 - **Analysis History** — All analyses automatically saved to MySQL with full tracking
@@ -242,6 +243,47 @@ consilium analyze AMZN --export csv -o analysis.csv
 # Export to Markdown
 consilium analyze AMZN --export md -o analysis.md
 ```
+
+### Cost Estimation
+
+Before any API call, Consilium shows an estimated cost breakdown and asks for confirmation.
+
+```bash
+# Standard analysis (shows cost, asks for confirmation)
+consilium analyze AAPL
+
+# Skip confirmation (for scripts/automation)
+consilium analyze AAPL --yes
+consilium compare AAPL,MSFT,GOOGL --yes
+consilium watchlist analyze tech-giants --yes
+consilium universe analyze mag7 --yes
+```
+
+**Example Output:**
+
+```
+╭────────────────────────────── Cost Estimation ───────────────────────────────╮
+│ Model: Claude Opus 4.5                                                       │
+│ Model ID: claude-opus-4-5-20251101                                           │
+│                                                                              │
+│  Component    Calls  Input Tokens  Output Tokens   Cost                      │
+│  Specialists      7        ~4,200         ~3,500  $0.33                      │
+│  Investors       13       ~32,500         ~9,100  $1.17                      │
+│  Total           20       ~36,700        ~12,600  $1.50                      │
+│                                                                              │
+│ Estimated Cost: $1.50 USD                                                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Proceed with analysis? [y/N]:
+```
+
+**Estimated Costs (Claude Opus 4.5):**
+
+| Scenario | API Calls | Cost |
+|----------|-----------|------|
+| 1 ticker (full pipeline) | 20 | ~$1.50 |
+| 1 ticker (no specialists) | 13 | ~$0.94 |
+| 3 tickers (compare) | 60 | ~$4.50 |
+| MAG7 universe | 140 | ~$10.50 |
 
 ### Asset Comparison
 
@@ -743,6 +785,8 @@ consilium analyze PETR3      # Wrong - will get 404
 - [x] International market support
 - [x] Watchlist management (CRUD + batch analysis)
 - [x] Stock universes (S&P 500, NASDAQ 100, Dow 30, MAG7, etc.)
+- [x] Cost estimation with user confirmation
+- [x] Asset comparison (side-by-side analysis)
 - [ ] Backtesting engine
 - [ ] Portfolio optimization recommendations
 - [ ] Screening based on agent criteria
