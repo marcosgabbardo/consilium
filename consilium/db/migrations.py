@@ -3,7 +3,7 @@
 from consilium.db.connection import DatabasePool
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 MIGRATIONS = {
     1: """
@@ -168,6 +168,79 @@ CREATE TABLE IF NOT EXISTS specialist_reports (
 -- Record version 2
 INSERT INTO schema_versions (version, description) VALUES (2, 'Historical tracking and extended analysis');
 """,
+    3: """
+-- Migration v3: Portfolio Management
+-- Adds portfolios, positions, import history, and portfolio analysis tables
+
+-- Portfolios table
+CREATE TABLE IF NOT EXISTS portfolios (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    currency VARCHAR(3) DEFAULT 'USD',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    INDEX idx_name (name)
+);
+
+-- Portfolio positions (holdings)
+CREATE TABLE IF NOT EXISTS portfolio_positions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    portfolio_id BIGINT NOT NULL,
+    ticker VARCHAR(20) NOT NULL,
+    quantity DECIMAL(18, 8) NOT NULL,
+    purchase_price DECIMAL(15, 4) NOT NULL,
+    purchase_date DATE NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE,
+    INDEX idx_portfolio_ticker (portfolio_id, ticker),
+    UNIQUE KEY idx_portfolio_position (portfolio_id, ticker, purchase_date, purchase_price)
+);
+
+-- Portfolio import history
+CREATE TABLE IF NOT EXISTS portfolio_imports (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    portfolio_id BIGINT NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    records_total INT DEFAULT 0,
+    records_success INT DEFAULT 0,
+    records_failed INT DEFAULT 0,
+    errors_json JSON,
+    column_mapping JSON,
+    imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE,
+    INDEX idx_portfolio (portfolio_id)
+);
+
+-- Portfolio analysis history
+CREATE TABLE IF NOT EXISTS portfolio_analysis (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    portfolio_id BIGINT NOT NULL,
+    analysis_id BIGINT NULL,
+    total_value DECIMAL(18, 2),
+    total_cost_basis DECIMAL(18, 2),
+    total_pnl DECIMAL(18, 2),
+    total_pnl_percent DECIMAL(8, 4),
+    portfolio_signal VARCHAR(20),
+    portfolio_score DECIMAL(6, 2),
+    sector_allocation JSON,
+    position_recommendations JSON,
+    analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE,
+    FOREIGN KEY (analysis_id) REFERENCES analysis_history(id) ON DELETE SET NULL,
+    INDEX idx_portfolio (portfolio_id),
+    INDEX idx_analyzed (analyzed_at)
+);
+
+-- Record version 3
+INSERT INTO schema_versions (version, description) VALUES (3, 'Portfolio management');
+""",
 }
 
 
@@ -220,6 +293,10 @@ async def run_migrations(pool: DatabasePool) -> list[int]:
 async def reset_database(pool: DatabasePool) -> None:
     """Drop all tables and recreate schema. USE WITH CAUTION."""
     tables = [
+        "portfolio_analysis",
+        "portfolio_imports",
+        "portfolio_positions",
+        "portfolios",
         "api_usage",
         "agent_config",
         "specialist_reports",

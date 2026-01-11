@@ -140,3 +140,50 @@ class ConsensusError(ConsiliumError):
                 "agent_count": agent_count,
             },
         )
+
+
+class PortfolioError(ConsiliumError):
+    """Raised when portfolio operations fail."""
+
+    def __init__(
+        self,
+        message: str,
+        portfolio_name: str | None = None,
+        operation: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        self.portfolio_name = portfolio_name
+        self.operation = operation
+        super().__init__(
+            message,
+            details={
+                **(details or {}),
+                "portfolio_name": portfolio_name,
+                "operation": operation,
+            },
+        )
+
+
+class PortfolioImportError(ConsiliumError):
+    """Raised when portfolio import fails."""
+
+    def __init__(
+        self,
+        message: str,
+        file_name: str | None = None,
+        row_number: int | None = None,
+        field: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        self.file_name = file_name
+        self.row_number = row_number
+        self.field = field
+        super().__init__(
+            message,
+            details={
+                **(details or {}),
+                "file_name": file_name,
+                "row_number": row_number,
+                "field": field,
+            },
+        )

@@ -24,12 +24,14 @@ console = Console()
 agents_app = typer.Typer(help="Agent management commands")
 watchlist_app = typer.Typer(help="Watchlist management commands")
 universe_app = typer.Typer(help="Stock universe management commands")
+portfolio_app = typer.Typer(help="Portfolio management commands")
 history_app = typer.Typer(help="Analysis history commands")
 db_app = typer.Typer(help="Database management commands")
 
 app.add_typer(agents_app, name="agents")
 app.add_typer(watchlist_app, name="watchlist")
 app.add_typer(universe_app, name="universe")
+app.add_typer(portfolio_app, name="portfolio")
 app.add_typer(history_app, name="history")
 app.add_typer(db_app, name="db")
 
@@ -1532,6 +1534,865 @@ def universe_analyze(
     # Display results
     formatter = ResultFormatter(console)
     formatter.display_results(result, verbose=verbose)
+
+
+# ============== Portfolio Commands ==============
+
+
+@portfolio_app.command("create")
+def portfolio_create(
+    name: str = typer.Argument(..., help="Portfolio name"),
+    description: Optional[str] = typer.Option(
+        None,
+        "--description",
+        "-d",
+        help="Portfolio description",
+    ),
+    currency: str = typer.Option(
+        "USD",
+        "--currency",
+        "-c",
+        help="Portfolio currency (default: USD)",
+    ),
+) -> None:
+    """
+    Create a new portfolio.
+
+    Examples:
+        consilium portfolio create "Tech Holdings"
+        consilium portfolio create "Tech Holdings" -d "My tech investments" -c USD
+    """
+    async def create():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+
+            # Check if already exists
+            existing = await repo.get_portfolio_by_name(name)
+            if existing:
+                console.print(f"[red]Error:[/red] Portfolio '{name}' already exists.")
+                return None
+
+            portfolio_id = await repo.create_portfolio(name, description, currency)
+            return portfolio_id
+        finally:
+            await close_pool()
+
+    try:
+        portfolio_id = asyncio.run(create())
+    except Exception as e:
+        console.print(f"[red]Error creating portfolio:[/red] {e}")
+        raise typer.Exit(1)
+
+    if portfolio_id:
+        console.print(f"[green]Created portfolio '{name}'[/green]")
+        console.print("[dim]Use 'consilium portfolio add' to add positions[/dim]")
+
+
+@portfolio_app.command("add")
+def portfolio_add(
+    name: str = typer.Argument(..., help="Portfolio name"),
+    ticker: str = typer.Argument(..., help="Ticker symbol"),
+    quantity: float = typer.Argument(..., help="Number of shares"),
+    price: float = typer.Argument(..., help="Purchase price per share"),
+    date: Optional[str] = typer.Option(
+        None,
+        "--date",
+        "-d",
+        help="Purchase date (YYYY-MM-DD), defaults to today",
+    ),
+    notes: Optional[str] = typer.Option(
+        None,
+        "--notes",
+        "-n",
+        help="Notes for this position",
+    ),
+) -> None:
+    """
+    Add a position to a portfolio.
+
+    Examples:
+        consilium portfolio add "Tech Holdings" AAPL 100 150.00
+        consilium portfolio add "Tech Holdings" NVDA 50 450.00 --date 2024-01-15
+        consilium portfolio add "Tech Holdings" MSFT 25 380.00 -n "Earnings play"
+    """
+    from datetime import date as dt_date
+    from decimal import Decimal
+
+    # Parse date
+    if date:
+        try:
+            from datetime import datetime
+            purchase_date = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            console.print(f"[red]Error:[/red] Invalid date format. Use YYYY-MM-DD.")
+            raise typer.Exit(1)
+    else:
+        purchase_date = dt_date.today()
+
+    async def add_position():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+
+            # Check if portfolio exists
+            portfolio = await repo.get_portfolio_by_name(name)
+            if not portfolio:
+                console.print(f"[red]Error:[/red] Portfolio '{name}' not found.")
+                return None
+
+            position_id = await repo.add_position(
+                portfolio_id=portfolio.id,
+                ticker=ticker.upper(),
+                quantity=Decimal(str(quantity)),
+                purchase_price=Decimal(str(price)),
+                purchase_date=purchase_date,
+                notes=notes,
+            )
+            return position_id, portfolio
+        finally:
+            await close_pool()
+
+    try:
+        result = asyncio.run(add_position())
+    except Exception as e:
+        console.print(f"[red]Error adding position:[/red] {e}")
+        raise typer.Exit(1)
+
+    if result:
+        position_id, portfolio = result
+        total_value = quantity * price
+        console.print(
+            f"[green]Added to '{name}':[/green] {quantity} {ticker.upper()} @ ${price:.2f} = ${total_value:,.2f}"
+        )
+        console.print(f"[dim]Purchase date: {purchase_date}[/dim]")
+
+
+@portfolio_app.command("list")
+def portfolio_list() -> None:
+    """
+    List all portfolios.
+
+    Examples:
+        consilium portfolio list
+    """
+    async def fetch_portfolios():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+            return await repo.list_portfolios()
+        finally:
+            await close_pool()
+
+    try:
+        portfolios = asyncio.run(fetch_portfolios())
+    except Exception as e:
+        console.print(f"[red]Error fetching portfolios:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not portfolios:
+        console.print("[yellow]No portfolios found.[/yellow]")
+        console.print("[dim]Use 'consilium portfolio create' to create one.[/dim]")
+        return
+
+    from consilium.output.portfolio_formatter import PortfolioFormatter
+    formatter = PortfolioFormatter(console)
+    formatter.display_portfolio_list(portfolios)
+    console.print(f"\n[dim]Use 'consilium portfolio show <name>' for details[/dim]")
+
+
+@portfolio_app.command("show")
+def portfolio_show(
+    name: str = typer.Argument(..., help="Portfolio name"),
+    refresh: bool = typer.Option(
+        True,
+        "--refresh/--no-refresh",
+        help="Fetch current prices (default: yes)",
+    ),
+) -> None:
+    """
+    Show portfolio details with positions and P&L.
+
+    Examples:
+        consilium portfolio show "Tech Holdings"
+        consilium portfolio show "Tech Holdings" --no-refresh
+    """
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
+    async def fetch_portfolio():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+        from consilium.portfolio.analyzer import PortfolioAnalyzer
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+
+            portfolio = await repo.get_portfolio_by_name(name)
+            if not portfolio:
+                return None, None
+
+            positions = await repo.get_positions(portfolio.id)
+            return portfolio, positions
+        finally:
+            await close_pool()
+
+    try:
+        portfolio, positions = asyncio.run(fetch_portfolio())
+    except Exception as e:
+        console.print(f"[red]Error fetching portfolio:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not portfolio:
+        console.print(f"[red]Portfolio '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    if not positions:
+        console.print(f"[yellow]Portfolio '{name}' has no positions.[/yellow]")
+        console.print("[dim]Use 'consilium portfolio add' to add positions[/dim]")
+        return
+
+    # Get summary with optional price refresh
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        disable=not refresh,
+    ) as progress:
+        if refresh:
+            progress.add_task("Fetching current prices...", total=None)
+
+        async def get_summary():
+            from consilium.db.connection import close_pool
+            from consilium.portfolio.analyzer import PortfolioAnalyzer
+
+            try:
+                analyzer = PortfolioAnalyzer()
+                return await analyzer.get_portfolio_summary(
+                    portfolio, positions, refresh_prices=refresh
+                )
+            finally:
+                await close_pool()
+
+        try:
+            summary = asyncio.run(get_summary())
+        except Exception as e:
+            console.print(f"[red]Error calculating summary:[/red] {e}")
+            raise typer.Exit(1)
+
+    from consilium.output.portfolio_formatter import PortfolioFormatter
+    formatter = PortfolioFormatter(console)
+    formatter.display_portfolio_summary(summary)
+    console.print(f"\n[dim]Use 'consilium portfolio analyze {name}' to run agent analysis[/dim]")
+
+
+@portfolio_app.command("remove")
+def portfolio_remove(
+    name: str = typer.Argument(..., help="Portfolio name"),
+    ticker: str = typer.Argument(..., help="Ticker symbol to remove"),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Skip confirmation prompt",
+    ),
+) -> None:
+    """
+    Remove all positions for a ticker from a portfolio.
+
+    Examples:
+        consilium portfolio remove "Tech Holdings" AAPL
+        consilium portfolio remove "Tech Holdings" AAPL --force
+    """
+    async def check_positions():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+
+            portfolio = await repo.get_portfolio_by_name(name)
+            if not portfolio:
+                return None, []
+
+            positions = await repo.get_position_by_ticker(portfolio.id, ticker)
+            return portfolio, positions
+        finally:
+            await close_pool()
+
+    async def do_remove(portfolio_id: int):
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+            return await repo.delete_positions_by_ticker(portfolio_id, ticker)
+        finally:
+            await close_pool()
+
+    try:
+        portfolio, positions = asyncio.run(check_positions())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not portfolio:
+        console.print(f"[red]Portfolio '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    if not positions:
+        console.print(f"[yellow]No positions found for {ticker.upper()} in '{name}'[/yellow]")
+        return
+
+    total_shares = sum(p.quantity for p in positions)
+    total_value = sum(p.cost_basis for p in positions)
+
+    if not force:
+        confirm = typer.confirm(
+            f"Remove {len(positions)} position(s) for {ticker.upper()} ({total_shares:,.4f} shares, ${total_value:,.2f} cost basis)?"
+        )
+        if not confirm:
+            console.print("[yellow]Aborted.[/yellow]")
+            raise typer.Exit(0)
+
+    try:
+        deleted = asyncio.run(do_remove(portfolio.id))
+        console.print(f"[green]Removed {deleted} position(s) for {ticker.upper()} from '{name}'[/green]")
+    except Exception as e:
+        console.print(f"[red]Error removing positions:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@portfolio_app.command("delete")
+def portfolio_delete(
+    name: str = typer.Argument(..., help="Portfolio name to delete"),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Skip confirmation prompt",
+    ),
+) -> None:
+    """
+    Delete a portfolio and all its positions.
+
+    Examples:
+        consilium portfolio delete "Old Portfolio"
+        consilium portfolio delete "Old Portfolio" --force
+    """
+    async def check_portfolio():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+
+            portfolio = await repo.get_portfolio_by_name(name)
+            if not portfolio:
+                return None, 0
+
+            positions = await repo.get_positions(portfolio.id)
+            return portfolio, len(positions)
+        finally:
+            await close_pool()
+
+    async def do_delete():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+            return await repo.delete_portfolio_by_name(name)
+        finally:
+            await close_pool()
+
+    try:
+        portfolio, position_count = asyncio.run(check_portfolio())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not portfolio:
+        console.print(f"[red]Portfolio '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    if not force:
+        confirm = typer.confirm(
+            f"Delete portfolio '{name}' with {position_count} positions?"
+        )
+        if not confirm:
+            console.print("[yellow]Aborted.[/yellow]")
+            raise typer.Exit(0)
+
+    try:
+        asyncio.run(do_delete())
+        console.print(f"[green]Deleted portfolio '{name}'[/green]")
+    except Exception as e:
+        console.print(f"[red]Error deleting portfolio:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@portfolio_app.command("import")
+def portfolio_import(
+    name: str = typer.Argument(..., help="Portfolio name"),
+    file_path: str = typer.Argument(..., help="CSV file path"),
+    preview: bool = typer.Option(
+        False,
+        "--preview",
+        "-p",
+        help="Preview import without saving",
+    ),
+    ticker_col: Optional[str] = typer.Option(
+        None,
+        "--ticker",
+        help="Ticker column name override",
+    ),
+    quantity_col: Optional[str] = typer.Option(
+        None,
+        "--quantity",
+        help="Quantity column name override",
+    ),
+    price_col: Optional[str] = typer.Option(
+        None,
+        "--price",
+        help="Price column name override",
+    ),
+    date_col: Optional[str] = typer.Option(
+        None,
+        "--date",
+        help="Date column name override",
+    ),
+) -> None:
+    """
+    Import positions from a CSV file.
+
+    Auto-detects columns or use overrides for custom column names.
+
+    Examples:
+        consilium portfolio import "Tech Holdings" holdings.csv
+        consilium portfolio import "Tech Holdings" holdings.csv --preview
+        consilium portfolio import "Tech Holdings" broker.csv --ticker symbol --quantity shares
+    """
+    from pathlib import Path
+
+    csv_path = Path(file_path)
+    if not csv_path.exists():
+        console.print(f"[red]Error:[/red] File not found: {file_path}")
+        raise typer.Exit(1)
+
+    async def get_portfolio():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+            return await repo.get_portfolio_by_name(name)
+        finally:
+            await close_pool()
+
+    try:
+        portfolio = asyncio.run(get_portfolio())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not portfolio:
+        console.print(f"[red]Portfolio '{name}' not found.[/red]")
+        console.print("[dim]Create it first with 'consilium portfolio create'[/dim]")
+        raise typer.Exit(1)
+
+    from consilium.portfolio.importer import CSVImporter
+    from consilium.core.portfolio_models import CSVColumnMapping
+
+    importer = CSVImporter()
+
+    # Build custom mapping if provided
+    custom_mapping = None
+    if any([ticker_col, quantity_col, price_col, date_col]):
+        custom_mapping = CSVColumnMapping(
+            ticker=ticker_col or "ticker",
+            quantity=quantity_col or "quantity",
+            purchase_price=price_col or "purchase_price",
+            purchase_date=date_col or "purchase_date",
+        )
+
+    if preview:
+        # Preview mode
+        try:
+            mapping, rows = importer.preview(csv_path, custom_mapping, limit=5)
+            from consilium.output.portfolio_formatter import PortfolioFormatter
+            formatter = PortfolioFormatter(console)
+            formatter.display_import_preview(mapping.model_dump(), rows)
+            console.print("\n[dim]Run without --preview to import[/dim]")
+        except Exception as e:
+            console.print(f"[red]Error parsing CSV:[/red] {e}")
+            raise typer.Exit(1)
+        return
+
+    # Full import
+    try:
+        result = importer.parse_file(csv_path, portfolio.id, custom_mapping)
+    except Exception as e:
+        console.print(f"[red]Error parsing CSV:[/red] {e}")
+        raise typer.Exit(1)
+
+    if result.records_success == 0:
+        console.print("[red]No valid records found in CSV.[/red]")
+        if result.errors:
+            from consilium.output.portfolio_formatter import PortfolioFormatter
+            formatter = PortfolioFormatter(console)
+            formatter.display_import_result(result)
+        raise typer.Exit(1)
+
+    # Save positions to database
+    async def save_positions():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+
+            saved = 0
+            for position in result.positions_created:
+                await repo.add_position(
+                    portfolio_id=portfolio.id,
+                    ticker=position.ticker,
+                    quantity=position.quantity,
+                    purchase_price=position.purchase_price,
+                    purchase_date=position.purchase_date,
+                    notes=position.notes,
+                )
+                saved += 1
+
+            # Save import history
+            await repo.save_import(
+                portfolio_id=portfolio.id,
+                file_name=result.file_name,
+                records_total=result.records_total,
+                records_success=result.records_success,
+                records_failed=result.records_failed,
+                errors=result.errors,
+                column_mapping=result.column_mapping,
+            )
+
+            return saved
+        finally:
+            await close_pool()
+
+    try:
+        saved = asyncio.run(save_positions())
+    except Exception as e:
+        console.print(f"[red]Error saving positions:[/red] {e}")
+        raise typer.Exit(1)
+
+    from consilium.output.portfolio_formatter import PortfolioFormatter
+    formatter = PortfolioFormatter(console)
+    formatter.display_import_result(result)
+
+
+@portfolio_app.command("import-history")
+def portfolio_import_history(
+    name: str = typer.Argument(..., help="Portfolio name"),
+) -> None:
+    """
+    Show import history for a portfolio.
+
+    Examples:
+        consilium portfolio import-history "Tech Holdings"
+    """
+    async def fetch_history():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+
+            portfolio = await repo.get_portfolio_by_name(name)
+            if not portfolio:
+                return None, []
+
+            history = await repo.get_import_history(portfolio.id)
+            return portfolio, history
+        finally:
+            await close_pool()
+
+    try:
+        portfolio, history = asyncio.run(fetch_history())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not portfolio:
+        console.print(f"[red]Portfolio '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    from consilium.output.portfolio_formatter import PortfolioFormatter
+    formatter = PortfolioFormatter(console)
+    formatter.display_import_history(history)
+
+
+@portfolio_app.command("analyze")
+def portfolio_analyze(
+    name: str = typer.Argument(..., help="Portfolio name"),
+    agents: Optional[str] = typer.Option(
+        None,
+        "--agents",
+        "-a",
+        help="Specific agents to use (comma-separated IDs)",
+    ),
+    skip_specialists: bool = typer.Option(
+        False,
+        "--skip-specialists",
+        "-s",
+        help="Skip specialist analysis phase",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show detailed analysis",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip cost confirmation (use with caution)",
+    ),
+    export: Optional[str] = typer.Option(
+        None,
+        "--export",
+        "-e",
+        help="Export format: json",
+    ),
+    output_file: Optional[str] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output file path for export",
+    ),
+) -> None:
+    """
+    Analyze portfolio positions using multi-agent system.
+
+    Examples:
+        consilium portfolio analyze "Tech Holdings"
+        consilium portfolio analyze "Tech Holdings" --verbose
+        consilium portfolio analyze "Tech Holdings" --agents buffett,munger --yes
+        consilium portfolio analyze "Tech Holdings" --export json -o analysis.json
+    """
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
+    settings = get_settings()
+
+    if not settings.is_configured:
+        console.print(
+            "[red]Error:[/red] ANTHROPIC_API_KEY not configured. "
+            "Please set it in your .env file or environment."
+        )
+        raise typer.Exit(1)
+
+    async def fetch_portfolio():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+
+            portfolio = await repo.get_portfolio_by_name(name)
+            if not portfolio:
+                return None, []
+
+            positions = await repo.get_positions(portfolio.id)
+            return portfolio, positions
+        finally:
+            await close_pool()
+
+    try:
+        portfolio, positions = asyncio.run(fetch_portfolio())
+    except Exception as e:
+        console.print(f"[red]Error fetching portfolio:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not portfolio:
+        console.print(f"[red]Portfolio '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    if not positions:
+        console.print(f"[yellow]Portfolio '{name}' has no positions to analyze.[/yellow]")
+        raise typer.Exit(0)
+
+    # Get unique tickers
+    tickers = list(set(p.ticker for p in positions))
+    agent_filter = [a.strip().lower() for a in agents.split(",")] if agents else None
+
+    from consilium.llm.cost_estimator import CostEstimator
+    from consilium.output.cost_display import CostDisplay
+
+    # Calculate number of agents for cost estimation
+    num_investors = len(agent_filter) if agent_filter else 13
+    num_specialists = 0 if skip_specialists else 7
+
+    # Show cost estimate
+    estimator = CostEstimator(settings.model)
+    estimate = estimator.estimate(
+        num_tickers=len(tickers),
+        num_investors=num_investors,
+        num_specialists=num_specialists,
+        include_specialists=not skip_specialists,
+    )
+
+    cost_display = CostDisplay(console)
+    cost_display.display(estimate)
+
+    console.print(
+        Panel(
+            f"[bold]Portfolio:[/bold] {name}\n"
+            f"[bold]Positions:[/bold] {len(positions)} ({len(tickers)} unique tickers)\n"
+            f"[bold]Agents:[/bold] {', '.join(agent_filter) if agent_filter else 'All'}\n"
+            f"[bold]Specialists:[/bold] {'Disabled' if skip_specialists else 'Enabled'}",
+            title="Portfolio Analysis",
+            border_style="blue",
+        )
+    )
+
+    if not yes:
+        if not typer.confirm("Proceed with analysis?"):
+            console.print("[yellow]Analysis cancelled.[/yellow]")
+            raise typer.Exit(0)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Initializing analysis...", total=None)
+
+        async def run_analysis():
+            from consilium.db.connection import close_pool
+            from consilium.portfolio.analyzer import PortfolioAnalyzer
+            from consilium.db.portfolio_repository import PortfolioRepository
+            from consilium.db.connection import get_pool
+
+            try:
+                analyzer = PortfolioAnalyzer(
+                    settings=settings,
+                    progress_callback=lambda msg: progress.update(task, description=msg),
+                )
+
+                result = await analyzer.analyze(
+                    portfolio=portfolio,
+                    positions=positions,
+                    agent_filter=agent_filter,
+                    include_specialists=not skip_specialists,
+                )
+
+                # Save analysis to database
+                pool = await get_pool()
+                repo = PortfolioRepository(pool)
+                await repo.save_portfolio_analysis(
+                    portfolio_id=portfolio.id,
+                    analysis_id=None,  # Would link to main analysis if we had the DB ID
+                    total_value=result.total_value,
+                    total_cost_basis=result.total_cost_basis,
+                    total_pnl=result.total_pnl,
+                    total_pnl_percent=result.total_pnl_percent,
+                    portfolio_signal=result.portfolio_signal.value,
+                    portfolio_score=result.portfolio_score,
+                    sector_allocation=[s.model_dump() for s in result.sector_allocations],
+                    position_recommendations=[
+                        {
+                            "ticker": pa.position.ticker,
+                            "signal": pa.signal.value if pa.signal else None,
+                            "action": pa.recommended_action.value,
+                            "weight": float(pa.weight_in_portfolio),
+                        }
+                        for pa in result.positions_with_analysis
+                    ],
+                )
+
+                return result
+            finally:
+                await close_pool()
+
+        try:
+            result = asyncio.run(run_analysis())
+        except Exception as e:
+            console.print(f"\n[red]Error during analysis:[/red] {e}")
+            raise typer.Exit(1)
+
+    # Display results
+    from consilium.output.portfolio_formatter import PortfolioFormatter
+    formatter = PortfolioFormatter(console)
+    formatter.display_portfolio_analysis(result, verbose=verbose)
+
+    # Export if requested
+    if export and output_file:
+        if export.lower() == "json":
+            import json
+            with open(output_file, "w") as f:
+                json.dump(result.model_dump(), f, indent=2, default=str)
+            console.print(f"\n[green]Results exported to {output_file}[/green]")
+        else:
+            console.print(f"[red]Unsupported export format:[/red] {export}")
+
+
+@portfolio_app.command("analysis-history")
+def portfolio_analysis_history(
+    name: str = typer.Argument(..., help="Portfolio name"),
+) -> None:
+    """
+    Show analysis history for a portfolio.
+
+    Examples:
+        consilium portfolio analysis-history "Tech Holdings"
+    """
+    async def fetch_history():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+
+            portfolio = await repo.get_portfolio_by_name(name)
+            if not portfolio:
+                return None, []
+
+            history = await repo.get_portfolio_analysis_history(portfolio.id)
+            return portfolio, history
+        finally:
+            await close_pool()
+
+    try:
+        portfolio, history = asyncio.run(fetch_history())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not portfolio:
+        console.print(f"[red]Portfolio '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    from consilium.output.portfolio_formatter import PortfolioFormatter
+    formatter = PortfolioFormatter(console)
+    formatter.display_analysis_history(history)
 
 
 # ============== History Commands ==============

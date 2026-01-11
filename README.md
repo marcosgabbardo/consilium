@@ -58,9 +58,11 @@ The name comes from Latin *consilium* ("council" or "deliberation"), reflecting 
 - **13 Investor Personalities** — Each with distinct investment philosophies, from value investing to growth, momentum, macro, and **quantitative** strategies
 - **7 Specialist Agents** — Quantitative analysis covering valuation, fundamentals, technicals, sentiment, risk, portfolio fit, and **political risk**
 - **Weighted Consensus Algorithm** — Agents vote with configurable weights and confidence levels
+- **Portfolio Management** — Import positions from CSV, track P&L, get per-position recommendations
 - **Cost Estimation** — Shows estimated API costs before execution with user confirmation
 - **Stock Universe Management** — Pre-built universes (S&P 500, NASDAQ 100, Dow 30, MAG7, Brazilian) for batch analysis
 - **Watchlist Management** — Create, manage, and batch-analyze stock watchlists
+- **Asset Comparison** — Side-by-side comparison with ranking and agent consensus matrix
 - **Analysis History** — All analyses automatically saved to MySQL with full tracking
 - **International Markets** — Support for global exchanges (US, Brazil `.SA`, Europe, Asia)
 - **Parallel Execution** — Async architecture for fast multi-agent analysis
@@ -484,6 +486,133 @@ consilium universe delete old-universe --force
 ╰─────────────────────────────────────────────────────────────────────────────╯
 ```
 
+### Portfolio Management
+
+Manage your investment portfolios with position tracking, P&L analysis, CSV import, and multi-agent analysis.
+
+```bash
+# Create a new portfolio
+consilium portfolio create "Tech Holdings" -d "My tech investments"
+
+# Add positions manually
+consilium portfolio add "Tech Holdings" AAPL 100 150.00 --date 2024-01-15
+consilium portfolio add "Tech Holdings" NVDA 50 450.00 --date 2024-02-01
+consilium portfolio add "Tech Holdings" MSFT 30 380.00  # Uses today's date
+
+# List all portfolios
+consilium portfolio list
+
+# Show portfolio with live P&L
+consilium portfolio show "Tech Holdings"
+consilium portfolio show "Tech Holdings" --refresh  # Fetch latest prices
+
+# Import positions from CSV
+consilium portfolio import "Tech Holdings" holdings.csv
+consilium portfolio import "Tech Holdings" holdings.csv --preview  # Preview first
+
+# Import with custom column mapping
+consilium portfolio import "Tech Holdings" broker_export.csv \
+    --ticker symbol --quantity shares --price avg_cost
+
+# View import history
+consilium portfolio import-history "Tech Holdings"
+
+# Remove positions for a ticker
+consilium portfolio remove "Tech Holdings" NVDA
+consilium portfolio remove "Tech Holdings" NVDA --force  # Skip confirmation
+
+# Analyze portfolio with multi-agent system
+consilium portfolio analyze "Tech Holdings"
+consilium portfolio analyze "Tech Holdings" --verbose
+consilium portfolio analyze "Tech Holdings" --agents buffett,munger,simons
+consilium portfolio analyze "Tech Holdings" --skip-specialists --yes
+
+# Export analysis results
+consilium portfolio analyze "Tech Holdings" --export json -o analysis.json
+
+# View analysis history
+consilium portfolio analysis-history "Tech Holdings"
+
+# Delete a portfolio
+consilium portfolio delete "Tech Holdings"
+consilium portfolio delete "Tech Holdings" --force
+```
+
+**CSV Import Features:**
+
+The importer automatically detects column names from common brokerage export formats:
+
+| Field | Recognized Headers |
+|-------|-------------------|
+| Ticker | ticker, symbol, stock, security, code, asset |
+| Quantity | quantity, qty, shares, units, amount, position |
+| Price | purchase_price, price, cost, avg_cost, buy_price |
+| Date | purchase_date, date, buy_date, trade_date |
+| Notes | notes, note, comment, description, memo |
+
+**Supported Date Formats:**
+- `YYYY-MM-DD`, `YYYY/MM/DD`
+- `MM/DD/YYYY`, `MM-DD-YYYY`
+- `DD/MM/YYYY`, `DD-MM-YYYY`
+
+**Example Output:**
+
+```
+╭───────────────────────────── Portfolio Summary ──────────────────────────────╮
+│ Tech Holdings                                                                │
+│ My tech investments                                                          │
+│                                                                              │
+│ Total Value: $51,156.96 USD                                                  │
+│ Cost Basis: $31,350.00                                                       │
+│ P&L: +$19,806.96 (+63.18%)                                                   │
+│                                                                              │
+│ Positions: 4                                                                 │
+│ Concentration Risk: CRITICAL (Top 3: 85.5%)                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Sector Allocation
+  Technology           ████████████████████░░░░░░░░░░  69.4% ($35,523)
+  Communication Services ████░░░░░░░░░░░░░░░░░░░░░░░░░░  16.1% ($8,214)
+  Consumer Cyclical    ████░░░░░░░░░░░░░░░░░░░░░░░░░░  14.5% ($7,420)
+
+                                  Holdings
+┏━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━┓
+┃ Ticker ┃ Shares ┃ Avg Cost ┃ Current ┃      Value ┃         P&L ┃   P&L % ┃
+┡━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━┩
+│ AAPL   │    100 │  $150.00 │ $259.37 │ $25,937.00 │ +$10,937.00 │  +72.9% │
+│ AMZN   │     30 │  $175.00 │ $247.34 │  $7,420.11 │  +$2,170.11 │  +41.3% │
+│ GOOGL  │     25 │  $140.00 │ $328.57 │  $8,214.25 │  +$4,714.25 │ +134.7% │
+│ MSFT   │     20 │  $380.00 │ $479.28 │  $9,585.60 │  +$1,985.60 │  +26.1% │
+└────────┴────────┴──────────┴─────────┴────────────┴─────────────┴─────────┘
+```
+
+**Portfolio Analysis Output:**
+
+```
+╭────────────────── Portfolio Analysis Summary ──────────────────╮
+│ Tech Holdings                                                   │
+│                                                                 │
+│ Portfolio Signal: BUY                                           │
+│ Confidence: HIGH                                                │
+│ Score: 62.5                                                     │
+│                                                                 │
+│ Total Value: $51,156.96                                         │
+│ P&L: +$19,806.96 (+63.18%)                                      │
+│                                                                 │
+│ Concentration Risk: HIGH (Top 3: 85.5%)                         │
+╰─────────────────────────────────────────────────────────────────╯
+
+              Position Recommendations
+┏━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━┓
+┃ Ticker ┃ Signal     ┃ Action   ┃ Weight ┃ Target   ┃
+┡━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━┩
+│ AAPL   │ BUY        │ HOLD     │ 50.7%  │ $280.00  │
+│ GOOGL  │ STRONG_BUY │ BUY_MORE │ 16.1%  │ $380.00  │
+│ AMZN   │ BUY        │ HOLD     │ 14.5%  │ $270.00  │
+│ MSFT   │ HOLD       │ HOLD     │ 18.7%  │ $480.00  │
+└────────┴────────────┴──────────┴────────┴──────────┘
+```
+
 ### System Commands
 
 ```bash
@@ -629,6 +758,7 @@ consilium/
 ├── config.py              # Pydantic Settings configuration
 ├── core/
 │   ├── models.py          # Stock, AgentResponse, ConsensusResult
+│   ├── portfolio_models.py # Portfolio, Position, Analysis models
 │   ├── enums.py           # SignalType, ConfidenceLevel, etc.
 │   └── exceptions.py      # Custom exception hierarchy
 ├── data/
@@ -638,7 +768,8 @@ consilium/
 ├── db/
 │   ├── connection.py      # Async MySQL connection pool
 │   ├── migrations.py      # Schema DDL (versioned migrations)
-│   └── repository.py      # Data access layer
+│   ├── repository.py      # Analysis/Watchlist data access
+│   └── portfolio_repository.py  # Portfolio data access layer
 ├── agents/
 │   ├── base.py            # BaseAgent, InvestorAgent, SpecialistAgent
 │   └── registry.py        # Agent factory and discovery
@@ -647,12 +778,18 @@ consilium/
 │   └── specialists/       # 7 specialist analysis YAMLs
 ├── llm/
 │   ├── client.py          # Async Anthropic client with retry
+│   ├── cost_estimator.py  # API cost estimation
 │   └── prompts.py         # Prompt builder with templates
 ├── analysis/
 │   ├── orchestrator.py    # Multi-agent pipeline coordination
 │   └── consensus.py       # Weighted voting algorithm
+├── portfolio/
+│   ├── importer.py        # CSV import with auto-detection
+│   └── analyzer.py        # Portfolio analysis orchestration
 └── output/
     ├── formatters.py      # Rich tables and panels
+    ├── comparison.py      # Asset comparison formatter
+    ├── portfolio_formatter.py  # Portfolio display formatter
     └── exporters.py       # JSON, CSV, MD export
 ```
 
@@ -721,6 +858,10 @@ consilium db init
 | `watchlists` | User-defined stock lists |
 | `stock_universes` | Pre-built index universes (S&P 500, etc.) |
 | `price_history` | Historical price data (for backtesting) |
+| `portfolios` | User investment portfolios |
+| `portfolio_positions` | Individual positions in portfolios |
+| `portfolio_imports` | CSV import history |
+| `portfolio_analysis` | Portfolio-level analysis results |
 | `schema_versions` | Migration tracking |
 
 ---
@@ -787,9 +928,10 @@ consilium analyze PETR3      # Wrong - will get 404
 - [x] Stock universes (S&P 500, NASDAQ 100, Dow 30, MAG7, etc.)
 - [x] Cost estimation with user confirmation
 - [x] Asset comparison (side-by-side analysis)
+- [x] Portfolio management (import, P&L tracking, analysis)
 - [ ] Backtesting engine
-- [ ] Portfolio optimization recommendations
-- [ ] Screening based on agent criteria
+- [ ] Advanced screening with presets
+- [ ] Agent debates (bull vs bear)
 - [ ] Web dashboard interface
 - [ ] Slack/Discord integration for alerts
 - [ ] Custom agent personality creation
