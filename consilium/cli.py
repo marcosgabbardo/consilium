@@ -23,11 +23,13 @@ console = Console()
 # Sub-applications
 agents_app = typer.Typer(help="Agent management commands")
 watchlist_app = typer.Typer(help="Watchlist management commands")
+universe_app = typer.Typer(help="Stock universe management commands")
 history_app = typer.Typer(help="Analysis history commands")
 db_app = typer.Typer(help="Database management commands")
 
 app.add_typer(agents_app, name="agents")
 app.add_typer(watchlist_app, name="watchlist")
+app.add_typer(universe_app, name="universe")
 app.add_typer(history_app, name="history")
 app.add_typer(db_app, name="db")
 
@@ -771,6 +773,482 @@ def watchlist_analyze(
             f"[bold]Agents:[/bold] {', '.join(agent_filter) if agent_filter else 'All'}\n"
             f"[bold]Specialists:[/bold] {'Disabled' if skip_specialists else 'Enabled'}",
             title="Watchlist Analysis",
+            border_style="blue",
+        )
+    )
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Initializing...", total=None)
+
+        async def run_analysis():
+            from consilium.db.connection import close_pool
+
+            try:
+                orchestrator = AnalysisOrchestrator(
+                    settings=settings,
+                    progress_callback=lambda msg: progress.update(task, description=msg),
+                )
+
+                return await orchestrator.analyze(
+                    tickers=tickers,
+                    agent_filter=agent_filter,
+                    include_specialists=not skip_specialists,
+                )
+            finally:
+                await close_pool()
+
+        try:
+            result = asyncio.run(run_analysis())
+        except Exception as e:
+            console.print(f"\n[red]Error during analysis:[/red] {e}")
+            raise typer.Exit(1)
+
+    # Display results
+    formatter = ResultFormatter(console)
+    formatter.display_results(result, verbose=verbose)
+
+
+# ============== Universe Commands ==============
+
+
+@universe_app.command("list")
+def universe_list() -> None:
+    """
+    List all available universes.
+
+    Shows both built-in universes (e.g., mag7, brazilian) and external index-based
+    universes (e.g., sp500, nasdaq100).
+
+    Examples:
+        consilium universe list
+    """
+    from consilium.data.universes import UniverseDataProvider
+
+    provider = UniverseDataProvider()
+    available = provider.get_available_universes()
+
+    table = Table(title="Available Stock Universes")
+    table.add_column("Name", style="cyan")
+    table.add_column("Description", style="white")
+    table.add_column("Status", style="yellow")
+
+    async def check_populated():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import UniverseRepository
+
+        try:
+            pool = await get_pool()
+            repo = UniverseRepository(pool)
+            populated = await repo.list_universes()
+            return {u["name"]: u for u in populated}
+        finally:
+            await close_pool()
+
+    try:
+        populated = asyncio.run(check_populated())
+    except Exception:
+        populated = {}
+
+    for name in available:
+        desc = provider.UNIVERSE_DESCRIPTIONS.get(name, "")
+        if name in populated:
+            count = populated[name].get("ticker_count", 0)
+            status = f"[green]{count} tickers[/green]"
+        else:
+            status = "[dim]Not populated[/dim]"
+        table.add_row(name, desc, status)
+
+    console.print(table)
+    console.print("\n[dim]Use 'consilium universe populate <name>' to fetch data[/dim]")
+
+
+@universe_app.command("populate")
+def universe_populate(
+    name: str = typer.Argument(
+        None,
+        help="Universe name (sp500, nasdaq100, dow30, mag7, brazilian)",
+    ),
+    all_universes: bool = typer.Option(
+        False,
+        "--all",
+        help="Populate all built-in universes",
+    ),
+) -> None:
+    """
+    Populate a stock universe from external data source.
+
+    Fetches index constituents and saves to database for fast access.
+
+    Examples:
+        consilium universe populate sp500
+        consilium universe populate --all
+    """
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from consilium.data.universes import UniverseDataProvider
+
+    provider = UniverseDataProvider()
+
+    if all_universes:
+        names_to_populate = provider.get_available_universes()
+    elif name:
+        names_to_populate = [name.lower()]
+    else:
+        console.print("[red]Error:[/red] Provide a universe name or use --all")
+        raise typer.Exit(1)
+
+    async def populate_universe(u_name: str):
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import UniverseRepository
+
+        data = provider.fetch_universe(u_name)
+        if not data:
+            return None, f"Universe '{u_name}' not found"
+
+        try:
+            pool = await get_pool()
+            repo = UniverseRepository(pool)
+            await repo.save_universe(
+                name=data.name,
+                tickers=data.tickers,
+                description=data.description,
+                source_url=data.source_url,
+            )
+            return data, None
+        finally:
+            await close_pool()
+
+    results = []
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        for u_name in names_to_populate:
+            task = progress.add_task(f"Fetching {u_name}...", total=None)
+            try:
+                data, error = asyncio.run(populate_universe(u_name))
+                if error:
+                    results.append((u_name, None, error))
+                else:
+                    results.append((u_name, data, None))
+            except Exception as e:
+                results.append((u_name, None, str(e)))
+            progress.remove_task(task)
+
+    # Display results
+    table = Table(title="Universe Population Results")
+    table.add_column("Universe", style="cyan")
+    table.add_column("Tickers", justify="right")
+    table.add_column("Status")
+
+    for u_name, data, error in results:
+        if error:
+            table.add_row(u_name, "-", f"[red]{error}[/red]")
+        else:
+            table.add_row(u_name, str(len(data.tickers)), "[green]Saved[/green]")
+
+    console.print(table)
+
+
+@universe_app.command("show")
+def universe_show(
+    name: str = typer.Argument(..., help="Universe name"),
+) -> None:
+    """
+    Show universe details and tickers.
+
+    Examples:
+        consilium universe show mag7
+        consilium universe show sp500
+    """
+    async def fetch_universe():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import UniverseRepository
+
+        try:
+            pool = await get_pool()
+            repo = UniverseRepository(pool)
+            return await repo.get_universe(name.lower())
+        finally:
+            await close_pool()
+
+    try:
+        universe = asyncio.run(fetch_universe())
+    except Exception as e:
+        console.print(f"[red]Error fetching universe:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not universe:
+        # Try fetching from provider directly
+        from consilium.data.universes import UniverseDataProvider
+        provider = UniverseDataProvider()
+        data = provider.fetch_universe(name)
+        if data:
+            console.print(f"[yellow]Universe '{name}' not populated in database.[/yellow]")
+            console.print(f"[dim]Use 'consilium universe populate {name}' first.[/dim]")
+            console.print(f"\n[cyan]Available tickers ({len(data.tickers)}):[/cyan]")
+            console.print(f"  {', '.join(data.tickers[:20])}{'...' if len(data.tickers) > 20 else ''}")
+        else:
+            console.print(f"[red]Universe '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    tickers = universe.get("tickers", [])
+    desc = universe.get("description") or "No description"
+    updated = universe.get("last_updated")
+    updated_str = updated.strftime("%Y-%m-%d %H:%M") if updated else "N/A"
+
+    # Group tickers for display
+    ticker_groups = []
+    for i in range(0, len(tickers), 10):
+        ticker_groups.append(", ".join(tickers[i:i+10]))
+
+    panel_content = (
+        f"[bold]Description:[/bold] {desc}\n"
+        f"[bold]Tickers:[/bold] {len(tickers)}\n"
+        f"[bold]Last Updated:[/bold] {updated_str}\n\n"
+        f"[cyan]Tickers:[/cyan]\n" + "\n".join(ticker_groups)
+    )
+
+    console.print(Panel(panel_content, title=f"Universe: {name}", border_style="blue"))
+    console.print(f"\n[dim]Use 'consilium universe analyze {name}' to run analysis[/dim]")
+
+
+@universe_app.command("sync")
+def universe_sync(
+    name: str = typer.Argument(..., help="Universe name to re-fetch"),
+) -> None:
+    """
+    Re-fetch and update universe data from source.
+
+    Examples:
+        consilium universe sync sp500
+    """
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from consilium.data.universes import UniverseDataProvider
+
+    provider = UniverseDataProvider()
+
+    async def sync_universe():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import UniverseRepository
+
+        data = provider.fetch_universe(name.lower())
+        if not data:
+            return None, f"Universe '{name}' not found"
+
+        try:
+            pool = await get_pool()
+            repo = UniverseRepository(pool)
+
+            # Get old count for comparison
+            existing = await repo.get_universe(name.lower())
+            old_count = len(existing.get("tickers", [])) if existing else 0
+
+            await repo.save_universe(
+                name=data.name,
+                tickers=data.tickers,
+                description=data.description,
+                source_url=data.source_url,
+            )
+            return data, old_count, None
+        finally:
+            await close_pool()
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task(f"Syncing {name}...", total=None)
+        try:
+            result = asyncio.run(sync_universe())
+        except Exception as e:
+            console.print(f"[red]Error syncing universe:[/red] {e}")
+            raise typer.Exit(1)
+
+    if result[2]:  # error
+        console.print(f"[red]Error:[/red] {result[2]}")
+        raise typer.Exit(1)
+
+    data, old_count, _ = result
+    diff = len(data.tickers) - old_count
+    diff_str = f"(+{diff})" if diff > 0 else f"({diff})" if diff < 0 else "(no change)"
+
+    console.print(f"[green]Synced '{name}':[/green] {len(data.tickers)} tickers {diff_str}")
+
+
+@universe_app.command("delete")
+def universe_delete(
+    name: str = typer.Argument(..., help="Universe name to delete"),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Skip confirmation prompt",
+    ),
+) -> None:
+    """
+    Delete a universe from the database.
+
+    Examples:
+        consilium universe delete sp500
+        consilium universe delete sp500 --force
+    """
+    async def fetch_universe():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import UniverseRepository
+
+        try:
+            pool = await get_pool()
+            repo = UniverseRepository(pool)
+            return await repo.get_universe(name.lower())
+        finally:
+            await close_pool()
+
+    async def do_delete():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import UniverseRepository
+
+        try:
+            pool = await get_pool()
+            repo = UniverseRepository(pool)
+            return await repo.delete_universe(name.lower())
+        finally:
+            await close_pool()
+
+    try:
+        existing = asyncio.run(fetch_universe())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not existing:
+        console.print(f"[red]Universe '{name}' not found in database.[/red]")
+        raise typer.Exit(1)
+
+    ticker_count = len(existing.get("tickers", []))
+
+    if not force:
+        confirm = typer.confirm(
+            f"Delete universe '{name}' with {ticker_count} tickers?"
+        )
+        if not confirm:
+            console.print("[yellow]Aborted.[/yellow]")
+            raise typer.Exit(0)
+
+    try:
+        asyncio.run(do_delete())
+        console.print(f"[green]Deleted universe '{name}'[/green]")
+    except Exception as e:
+        console.print(f"[red]Error deleting universe:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@universe_app.command("analyze")
+def universe_analyze(
+    name: str = typer.Argument(..., help="Universe name"),
+    limit: Optional[int] = typer.Option(
+        None,
+        "--limit",
+        "-l",
+        help="Analyze only N random tickers (for large universes)",
+    ),
+    agents: Optional[str] = typer.Option(
+        None,
+        "--agents",
+        "-a",
+        help="Specific agents to use (comma-separated IDs)",
+    ),
+    skip_specialists: bool = typer.Option(
+        False,
+        "--skip-specialists",
+        "-s",
+        help="Skip specialist analysis phase",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show detailed agent reasoning",
+    ),
+) -> None:
+    """
+    Analyze all tickers in a universe.
+
+    For large universes like sp500, use --limit to analyze a subset.
+
+    Examples:
+        consilium universe analyze mag7
+        consilium universe analyze mag7 --verbose
+        consilium universe analyze sp500 --limit 10 --agents buffett,simons
+    """
+    import random
+
+    settings = get_settings()
+
+    if not settings.is_configured:
+        console.print(
+            "[red]Error:[/red] ANTHROPIC_API_KEY not configured. "
+            "Please set it in your .env file or environment."
+        )
+        raise typer.Exit(1)
+
+    async def fetch_universe():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import UniverseRepository
+
+        try:
+            pool = await get_pool()
+            repo = UniverseRepository(pool)
+            return await repo.get_universe(name.lower())
+        finally:
+            await close_pool()
+
+    try:
+        universe = asyncio.run(fetch_universe())
+    except Exception as e:
+        console.print(f"[red]Error fetching universe:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not universe:
+        # Check if universe exists but not populated
+        from consilium.data.universes import UniverseDataProvider
+        provider = UniverseDataProvider()
+        if name.lower() in provider.get_available_universes():
+            console.print(f"[yellow]Universe '{name}' not populated.[/yellow]")
+            console.print(f"[dim]Run 'consilium universe populate {name}' first.[/dim]")
+        else:
+            console.print(f"[red]Universe '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    tickers = universe.get("tickers", [])
+    if not tickers:
+        console.print(f"[yellow]Universe '{name}' has no tickers.[/yellow]")
+        raise typer.Exit(0)
+
+    # Apply limit if specified
+    original_count = len(tickers)
+    if limit and limit < len(tickers):
+        tickers = random.sample(tickers, limit)
+        console.print(f"[dim]Sampling {limit} of {original_count} tickers[/dim]")
+
+    agent_filter = [a.strip().lower() for a in agents.split(",")] if agents else None
+
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from consilium.analysis.orchestrator import AnalysisOrchestrator
+    from consilium.output.formatters import ResultFormatter
+
+    console.print(
+        Panel(
+            f"[bold]Universe:[/bold] {name}\n"
+            f"[bold]Tickers:[/bold] {len(tickers)} of {original_count}\n"
+            f"[bold]Agents:[/bold] {', '.join(agent_filter) if agent_filter else 'All'}\n"
+            f"[bold]Specialists:[/bold] {'Disabled' if skip_specialists else 'Enabled'}",
+            title="Universe Analysis",
             border_style="blue",
         )
     )

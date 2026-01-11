@@ -58,6 +58,7 @@ The name comes from Latin *consilium* ("council" or "deliberation"), reflecting 
 - **13 Investor Personalities** — Each with distinct investment philosophies, from value investing to growth, momentum, macro, and **quantitative** strategies
 - **7 Specialist Agents** — Quantitative analysis covering valuation, fundamentals, technicals, sentiment, risk, portfolio fit, and **political risk**
 - **Weighted Consensus Algorithm** — Agents vote with configurable weights and confidence levels
+- **Stock Universe Management** — Pre-built universes (S&P 500, NASDAQ 100, Dow 30, MAG7, Brazilian) for batch analysis
 - **Watchlist Management** — Create, manage, and batch-analyze stock watchlists
 - **Analysis History** — All analyses automatically saved to MySQL with full tracking
 - **International Markets** — Support for global exchanges (US, Brazil `.SA`, Europe, Asia)
@@ -311,6 +312,77 @@ consilium watchlist delete old-list --force  # Skip confirmation
 ╰───────────────────────────────────────────────────────────────────────╯
 ```
 
+### Stock Universe Management
+
+Access pre-built stock universes from major indices for batch analysis.
+
+**Available Universes:**
+
+| Universe | Description | Tickers |
+|----------|-------------|---------|
+| `sp500` | S&P 500 - Large Cap US equities | ~500 |
+| `sp100` | S&P 100 - Top 100 US Blue Chips | ~100 |
+| `nasdaq100` | NASDAQ 100 - Tech-heavy US stocks | ~100 |
+| `dow30` | Dow Jones Industrial Average | 30 |
+| `mag7` | Magnificent 7 - Tech megacaps | 7 |
+| `brazilian` | Top Brazilian stocks (B3) | 20 |
+| `dax` | DAX - German Blue Chips | 40 |
+| `ftse100` | FTSE 100 - UK largest companies | 100 |
+| `nikkei225` | NIKKEI 225 - Japanese Blue Chips | 225 |
+| `eurostoxx50` | Euro Stoxx 50 - Eurozone Blue Chips | 50 |
+
+```bash
+# List all available universes (with population status)
+consilium universe list
+
+# Populate a universe from external data source
+consilium universe populate sp500
+consilium universe populate mag7
+consilium universe populate --all  # Populate all universes
+
+# Show universe details and tickers
+consilium universe show mag7
+consilium universe show dow30
+
+# Re-sync universe data (fetch latest constituents)
+consilium universe sync sp500
+
+# Analyze all tickers in a universe
+consilium universe analyze mag7
+consilium universe analyze mag7 --verbose
+consilium universe analyze dow30 --agents buffett,simons
+
+# For large universes, use --limit to sample random tickers
+consilium universe analyze sp500 --limit 20 --agents buffett,munger
+
+# Delete a universe from database
+consilium universe delete old-universe
+consilium universe delete old-universe --force
+```
+
+**Example Output:**
+
+```
+                           Available Stock Universes
+┏━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ Name        ┃ Description                                 ┃ Status        ┃
+┡━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ dow30       │ Dow Jones Industrial Average - 30 Blue...   │ 30 tickers    │
+│ mag7        │ Magnificent 7 - Tech megacaps               │ 7 tickers     │
+│ nasdaq100   │ NASDAQ 100 - Top tech-heavy US stocks       │ Not populated │
+│ sp500       │ S&P 500 - Large Cap US equities             │ Not populated │
+└─────────────┴─────────────────────────────────────────────┴───────────────┘
+
+╭────────────────────────────── Universe: mag7 ───────────────────────────────╮
+│ Description: Magnificent 7 - Tech megacaps                                  │
+│ Tickers: 7                                                                  │
+│ Last Updated: 2026-01-11 14:57                                              │
+│                                                                             │
+│ Tickers:                                                                    │
+│ AAPL, MSFT, GOOGL, AMZN, META, NVDA, TSLA                                   │
+╰─────────────────────────────────────────────────────────────────────────────╯
+```
+
 ### System Commands
 
 ```bash
@@ -460,7 +532,8 @@ consilium/
 │   └── exceptions.py      # Custom exception hierarchy
 ├── data/
 │   ├── yahoo.py           # Yahoo Finance data provider
-│   └── cache.py           # Cache-aside pattern with MySQL
+│   ├── cache.py           # Cache-aside pattern with MySQL
+│   └── universes.py       # Stock universe data provider
 ├── db/
 │   ├── connection.py      # Async MySQL connection pool
 │   ├── migrations.py      # Schema DDL (versioned migrations)
@@ -545,6 +618,7 @@ consilium db init
 | `specialist_reports` | Specialist analysis reports |
 | `market_data_cache` | Cached Yahoo Finance data |
 | `watchlists` | User-defined stock lists |
+| `stock_universes` | Pre-built index universes (S&P 500, etc.) |
 | `price_history` | Historical price data (for backtesting) |
 | `schema_versions` | Migration tracking |
 
@@ -609,7 +683,7 @@ consilium analyze PETR3      # Wrong - will get 404
 - [x] Jim Simons quantitative agent
 - [x] International market support
 - [x] Watchlist management (CRUD + batch analysis)
-- [ ] Stock universes (S&P 500, NASDAQ 100, etc.)
+- [x] Stock universes (S&P 500, NASDAQ 100, Dow 30, MAG7, etc.)
 - [ ] Backtesting engine
 - [ ] Portfolio optimization recommendations
 - [ ] Screening based on agent criteria

@@ -11,6 +11,7 @@ python-dotenv>=1.0.0
 jinja2>=3.1.0
 pyyaml>=6.0.0
 tenacity>=8.2.0
+pytickersymbols>=1.13.0
 
 # Development dependencies
 pytest>=8.0.0
