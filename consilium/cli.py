@@ -92,6 +92,12 @@ def analyze(
         "-v",
         help="Show detailed agent reasoning",
     ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip cost confirmation (use with caution)",
+    ),
 ) -> None:
     """
     Analyze stocks using the multi-agent consensus system.
@@ -101,6 +107,7 @@ def analyze(
         consilium analyze "AAPL,NVDA,MSFT" --verbose
         consilium analyze TSLA --agents buffett,munger,graham
         consilium analyze AMZN --export json -o analysis.json
+        consilium analyze AAPL --yes  # Skip cost confirmation
     """
     settings = get_settings()
 
@@ -122,6 +129,29 @@ def analyze(
     from consilium.analysis.orchestrator import AnalysisOrchestrator
     from consilium.output.formatters import ResultFormatter
     from consilium.output.exporters import export_result
+    from consilium.llm.cost_estimator import CostEstimator
+    from consilium.output.cost_display import CostDisplay
+
+    # Calculate number of agents
+    num_investors = len(agent_filter) if agent_filter else 13
+    num_specialists = 0 if skip_specialists else 7
+
+    # Show cost estimate and ask for confirmation
+    estimator = CostEstimator(settings.model)
+    estimate = estimator.estimate(
+        num_tickers=len(ticker_list),
+        num_investors=num_investors,
+        num_specialists=num_specialists,
+        include_specialists=not skip_specialists,
+    )
+
+    cost_display = CostDisplay(console)
+    cost_display.display(estimate)
+
+    if not yes:
+        if not typer.confirm("Proceed with analysis?"):
+            console.print("[yellow]Analysis cancelled.[/yellow]")
+            raise typer.Exit(0)
 
     console.print(
         Panel(
@@ -224,6 +254,12 @@ def compare(
         "-v",
         help="Show all comparison views",
     ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip cost confirmation (use with caution)",
+    ),
 ) -> None:
     """
     Compare multiple assets side-by-side.
@@ -236,6 +272,7 @@ def compare(
         consilium compare AAPL,MSFT,GOOGL --sort agreement
         consilium compare NVDA,AMD,INTC --matrix --themes
         consilium compare "TSLA,F,GM" --agents buffett,munger --verbose
+        consilium compare AAPL,MSFT --yes  # Skip cost confirmation
     """
     settings = get_settings()
 
@@ -258,6 +295,29 @@ def compare(
     from rich.progress import Progress, SpinnerColumn, TextColumn
     from consilium.analysis.orchestrator import AnalysisOrchestrator
     from consilium.output.comparison import ComparisonFormatter
+    from consilium.llm.cost_estimator import CostEstimator
+    from consilium.output.cost_display import CostDisplay
+
+    # Calculate number of agents
+    num_investors = len(agent_filter) if agent_filter else 13
+    num_specialists = 0 if skip_specialists else 7
+
+    # Show cost estimate and ask for confirmation
+    estimator = CostEstimator(settings.model)
+    estimate = estimator.estimate(
+        num_tickers=len(ticker_list),
+        num_investors=num_investors,
+        num_specialists=num_specialists,
+        include_specialists=not skip_specialists,
+    )
+
+    cost_display = CostDisplay(console)
+    cost_display.display(estimate)
+
+    if not yes:
+        if not typer.confirm("Proceed with comparison?"):
+            console.print("[yellow]Comparison cancelled.[/yellow]")
+            raise typer.Exit(0)
 
     console.print(
         Panel(
@@ -843,6 +903,12 @@ def watchlist_analyze(
         "-v",
         help="Show detailed agent reasoning",
     ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip cost confirmation (use with caution)",
+    ),
 ) -> None:
     """
     Analyze all tickers in a watchlist.
@@ -851,6 +917,7 @@ def watchlist_analyze(
         consilium watchlist analyze tech-giants
         consilium watchlist analyze tech-giants --verbose
         consilium watchlist analyze tech-giants --agents buffett,munger
+        consilium watchlist analyze tech-giants --yes  # Skip cost confirmation
     """
     settings = get_settings()
 
@@ -892,6 +959,29 @@ def watchlist_analyze(
     from rich.progress import Progress, SpinnerColumn, TextColumn
     from consilium.analysis.orchestrator import AnalysisOrchestrator
     from consilium.output.formatters import ResultFormatter
+    from consilium.llm.cost_estimator import CostEstimator
+    from consilium.output.cost_display import CostDisplay
+
+    # Calculate number of agents
+    num_investors = len(agent_filter) if agent_filter else 13
+    num_specialists = 0 if skip_specialists else 7
+
+    # Show cost estimate and ask for confirmation
+    estimator = CostEstimator(settings.model)
+    estimate = estimator.estimate(
+        num_tickers=len(tickers),
+        num_investors=num_investors,
+        num_specialists=num_specialists,
+        include_specialists=not skip_specialists,
+    )
+
+    cost_display = CostDisplay(console)
+    cost_display.display(estimate)
+
+    if not yes:
+        if not typer.confirm("Proceed with analysis?"):
+            console.print("[yellow]Analysis cancelled.[/yellow]")
+            raise typer.Exit(0)
 
     console.print(
         Panel(
@@ -1302,6 +1392,12 @@ def universe_analyze(
         "-v",
         help="Show detailed agent reasoning",
     ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip cost confirmation (use with caution)",
+    ),
 ) -> None:
     """
     Analyze all tickers in a universe.
@@ -1368,6 +1464,8 @@ def universe_analyze(
     from rich.progress import Progress, SpinnerColumn, TextColumn
     from consilium.analysis.orchestrator import AnalysisOrchestrator
     from consilium.output.formatters import ResultFormatter
+    from consilium.llm.cost_estimator import CostEstimator
+    from consilium.output.cost_display import CostDisplay
 
     console.print(
         Panel(
@@ -1379,6 +1477,27 @@ def universe_analyze(
             border_style="blue",
         )
     )
+
+    # Calculate number of agents for cost estimation
+    num_investors = len(agent_filter) if agent_filter else 13
+    num_specialists = 0 if skip_specialists else 7
+
+    # Show cost estimate and ask for confirmation
+    estimator = CostEstimator(settings.model)
+    estimate = estimator.estimate(
+        num_tickers=len(tickers),
+        num_investors=num_investors,
+        num_specialists=num_specialists,
+        include_specialists=not skip_specialists,
+    )
+
+    cost_display = CostDisplay(console)
+    cost_display.display(estimate)
+
+    if not yes:
+        if not typer.confirm("Proceed with analysis?"):
+            console.print("[yellow]Analysis cancelled.[/yellow]")
+            raise typer.Exit(0)
 
     with Progress(
         SpinnerColumn(),
