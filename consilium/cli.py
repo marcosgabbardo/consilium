@@ -371,30 +371,443 @@ def agents_info(
 # ============== Watchlist Commands ==============
 
 
+@watchlist_app.command("create")
+def watchlist_create(
+    name: str = typer.Argument(..., help="Watchlist name"),
+    tickers: list[str] = typer.Argument(..., help="Ticker symbols to add"),
+    description: Optional[str] = typer.Option(
+        None,
+        "--description",
+        "-d",
+        help="Watchlist description",
+    ),
+) -> None:
+    """
+    Create a new watchlist with tickers.
+
+    Examples:
+        consilium watchlist create tech-giants AAPL MSFT GOOGL NVDA META
+        consilium watchlist create value-picks AAPL MSFT -d "My value investments"
+    """
+    async def create_watchlist():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import WatchlistRepository
+
+        try:
+            pool = await get_pool()
+            repo = WatchlistRepository(pool)
+
+            # Check if already exists
+            existing = await repo.get_by_name(name)
+            if existing:
+                console.print(f"[red]Error:[/red] Watchlist '{name}' already exists.")
+                console.print("[dim]Use 'consilium watchlist add' to add tickers to existing list.[/dim]")
+                return False
+
+            ticker_list = [t.upper() for t in tickers]
+            await repo.create(name, ticker_list, description)
+            return ticker_list
+        finally:
+            await close_pool()
+
+    try:
+        result = asyncio.run(create_watchlist())
+    except Exception as e:
+        console.print(f"[red]Error creating watchlist:[/red] {e}")
+        raise typer.Exit(1)
+
+    if result:
+        console.print(f"[green]Created watchlist '{name}' with {len(result)} tickers:[/green]")
+        console.print(f"  {', '.join(result)}")
+
+
 @watchlist_app.command("add")
 def watchlist_add(
     name: str = typer.Argument(..., help="Watchlist name"),
-    tickers: str = typer.Argument(..., help="Comma-separated tickers"),
+    tickers: list[str] = typer.Argument(..., help="Ticker symbols to add"),
 ) -> None:
-    """Add tickers to a watchlist (creates if doesn't exist)."""
-    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
-    console.print(f"[green]Adding to watchlist '{name}':[/green] {', '.join(ticker_list)}")
-    console.print("\n[yellow]Watchlist feature not yet implemented.[/yellow]")
+    """
+    Add tickers to an existing watchlist.
+
+    Examples:
+        consilium watchlist add tech-giants AMZN TSLA
+    """
+    async def add_to_watchlist():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import WatchlistRepository
+
+        try:
+            pool = await get_pool()
+            repo = WatchlistRepository(pool)
+
+            # Check if watchlist exists
+            existing = await repo.get_by_name(name)
+            if not existing:
+                console.print(f"[red]Error:[/red] Watchlist '{name}' not found.")
+                console.print("[dim]Use 'consilium watchlist create' to create a new watchlist.[/dim]")
+                return None
+
+            ticker_list = [t.upper() for t in tickers]
+            await repo.add_tickers(name, ticker_list)
+
+            # Get updated watchlist
+            updated = await repo.get_by_name(name)
+            return updated
+        finally:
+            await close_pool()
+
+    try:
+        result = asyncio.run(add_to_watchlist())
+    except Exception as e:
+        console.print(f"[red]Error adding tickers:[/red] {e}")
+        raise typer.Exit(1)
+
+    if result:
+        added = [t.upper() for t in tickers]
+        console.print(f"[green]Added to '{name}':[/green] {', '.join(added)}")
+        console.print(f"[dim]Watchlist now has {len(result['tickers'])} tickers[/dim]")
+
+
+@watchlist_app.command("remove")
+def watchlist_remove(
+    name: str = typer.Argument(..., help="Watchlist name"),
+    tickers: list[str] = typer.Argument(..., help="Ticker symbols to remove"),
+) -> None:
+    """
+    Remove tickers from a watchlist.
+
+    Examples:
+        consilium watchlist remove tech-giants META AMZN
+    """
+    async def remove_from_watchlist():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import WatchlistRepository
+
+        try:
+            pool = await get_pool()
+            repo = WatchlistRepository(pool)
+
+            # Check if watchlist exists
+            existing = await repo.get_by_name(name)
+            if not existing:
+                console.print(f"[red]Error:[/red] Watchlist '{name}' not found.")
+                return None
+
+            ticker_list = [t.upper() for t in tickers]
+
+            # Check which tickers are actually in the list
+            current_tickers = set(existing.get("tickers", []))
+            to_remove = set(ticker_list) & current_tickers
+            not_found = set(ticker_list) - current_tickers
+
+            if not_found:
+                console.print(f"[yellow]Warning:[/yellow] Tickers not in watchlist: {', '.join(not_found)}")
+
+            if to_remove:
+                await repo.remove_tickers(name, list(to_remove))
+
+            # Get updated watchlist
+            updated = await repo.get_by_name(name)
+            return updated, list(to_remove)
+        finally:
+            await close_pool()
+
+    try:
+        result = asyncio.run(remove_from_watchlist())
+    except Exception as e:
+        console.print(f"[red]Error removing tickers:[/red] {e}")
+        raise typer.Exit(1)
+
+    if result:
+        updated, removed = result
+        if removed:
+            console.print(f"[green]Removed from '{name}':[/green] {', '.join(removed)}")
+        console.print(f"[dim]Watchlist now has {len(updated['tickers'])} tickers[/dim]")
+
+
+@watchlist_app.command("delete")
+def watchlist_delete(
+    name: str = typer.Argument(..., help="Watchlist name to delete"),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Skip confirmation prompt",
+    ),
+) -> None:
+    """
+    Delete a watchlist.
+
+    Examples:
+        consilium watchlist delete old-list
+        consilium watchlist delete old-list --force
+    """
+    async def delete_watchlist():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import WatchlistRepository
+
+        try:
+            pool = await get_pool()
+            repo = WatchlistRepository(pool)
+
+            # Check if watchlist exists
+            existing = await repo.get_by_name(name)
+            if not existing:
+                console.print(f"[red]Error:[/red] Watchlist '{name}' not found.")
+                return False
+
+            return existing
+        finally:
+            await close_pool()
+
+    async def confirm_and_delete():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import WatchlistRepository
+
+        try:
+            pool = await get_pool()
+            repo = WatchlistRepository(pool)
+            await repo.delete(name)
+            return True
+        finally:
+            await close_pool()
+
+    try:
+        existing = asyncio.run(delete_watchlist())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not existing:
+        raise typer.Exit(1)
+
+    ticker_count = len(existing.get("tickers", []))
+
+    if not force:
+        confirm = typer.confirm(
+            f"Delete watchlist '{name}' with {ticker_count} tickers?"
+        )
+        if not confirm:
+            console.print("[yellow]Aborted.[/yellow]")
+            raise typer.Exit(0)
+
+    try:
+        asyncio.run(confirm_and_delete())
+        console.print(f"[green]Deleted watchlist '{name}'[/green]")
+    except Exception as e:
+        console.print(f"[red]Error deleting watchlist:[/red] {e}")
+        raise typer.Exit(1)
 
 
 @watchlist_app.command("list")
 def watchlist_list() -> None:
-    """List all watchlists."""
-    console.print("[yellow]Watchlist feature not yet implemented.[/yellow]")
+    """
+    List all watchlists.
+
+    Examples:
+        consilium watchlist list
+    """
+    async def fetch_watchlists():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import WatchlistRepository
+
+        try:
+            pool = await get_pool()
+            repo = WatchlistRepository(pool)
+            return await repo.list_all()
+        finally:
+            await close_pool()
+
+    try:
+        watchlists = asyncio.run(fetch_watchlists())
+    except Exception as e:
+        console.print(f"[red]Error fetching watchlists:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not watchlists:
+        console.print("[yellow]No watchlists found.[/yellow]")
+        console.print("[dim]Use 'consilium watchlist create' to create one.[/dim]")
+        return
+
+    table = Table(title="Watchlists")
+    table.add_column("Name", style="cyan")
+    table.add_column("Description", style="white")
+    table.add_column("Created", style="dim")
+    table.add_column("Updated", style="dim")
+
+    for wl in watchlists:
+        desc = wl.get("description") or "-"
+        created = wl.get("created_at").strftime("%Y-%m-%d") if wl.get("created_at") else "-"
+        updated = wl.get("updated_at").strftime("%Y-%m-%d") if wl.get("updated_at") else "-"
+        table.add_row(wl["name"], desc[:40], created, updated)
+
+    console.print(table)
+    console.print(f"\n[dim]Use 'consilium watchlist show <name>' for details[/dim]")
 
 
 @watchlist_app.command("show")
 def watchlist_show(
     name: str = typer.Argument(..., help="Watchlist name"),
 ) -> None:
-    """Show tickers in a watchlist."""
-    console.print(f"[cyan]Watchlist:[/cyan] {name}")
-    console.print("\n[yellow]Watchlist feature not yet implemented.[/yellow]")
+    """
+    Show details and tickers of a watchlist.
+
+    Examples:
+        consilium watchlist show tech-giants
+    """
+    async def fetch_watchlist():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import WatchlistRepository
+
+        try:
+            pool = await get_pool()
+            repo = WatchlistRepository(pool)
+            return await repo.get_by_name(name)
+        finally:
+            await close_pool()
+
+    try:
+        watchlist = asyncio.run(fetch_watchlist())
+    except Exception as e:
+        console.print(f"[red]Error fetching watchlist:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not watchlist:
+        console.print(f"[red]Watchlist '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    tickers = watchlist.get("tickers", [])
+    desc = watchlist.get("description") or "No description"
+    created = watchlist.get("created_at").strftime("%Y-%m-%d %H:%M") if watchlist.get("created_at") else "N/A"
+    updated = watchlist.get("updated_at").strftime("%Y-%m-%d %H:%M") if watchlist.get("updated_at") else "N/A"
+
+    panel_content = (
+        f"[bold]Description:[/bold] {desc}\n"
+        f"[bold]Tickers:[/bold] {len(tickers)}\n"
+        f"[bold]Created:[/bold] {created}\n"
+        f"[bold]Updated:[/bold] {updated}\n\n"
+        f"[cyan]{', '.join(tickers) if tickers else 'No tickers'}[/cyan]"
+    )
+
+    console.print(Panel(panel_content, title=f"Watchlist: {name}", border_style="blue"))
+    console.print(f"\n[dim]Use 'consilium watchlist analyze {name}' to run analysis[/dim]")
+
+
+@watchlist_app.command("analyze")
+def watchlist_analyze(
+    name: str = typer.Argument(..., help="Watchlist name"),
+    agents: Optional[str] = typer.Option(
+        None,
+        "--agents",
+        "-a",
+        help="Specific agents to use (comma-separated IDs)",
+    ),
+    skip_specialists: bool = typer.Option(
+        False,
+        "--skip-specialists",
+        "-s",
+        help="Skip specialist analysis phase",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show detailed agent reasoning",
+    ),
+) -> None:
+    """
+    Analyze all tickers in a watchlist.
+
+    Examples:
+        consilium watchlist analyze tech-giants
+        consilium watchlist analyze tech-giants --verbose
+        consilium watchlist analyze tech-giants --agents buffett,munger
+    """
+    settings = get_settings()
+
+    if not settings.is_configured:
+        console.print(
+            "[red]Error:[/red] ANTHROPIC_API_KEY not configured. "
+            "Please set it in your .env file or environment."
+        )
+        raise typer.Exit(1)
+
+    async def fetch_watchlist():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.repository import WatchlistRepository
+
+        try:
+            pool = await get_pool()
+            repo = WatchlistRepository(pool)
+            return await repo.get_by_name(name)
+        finally:
+            await close_pool()
+
+    try:
+        watchlist = asyncio.run(fetch_watchlist())
+    except Exception as e:
+        console.print(f"[red]Error fetching watchlist:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not watchlist:
+        console.print(f"[red]Watchlist '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    tickers = watchlist.get("tickers", [])
+    if not tickers:
+        console.print(f"[yellow]Watchlist '{name}' has no tickers.[/yellow]")
+        raise typer.Exit(0)
+
+    agent_filter = [a.strip().lower() for a in agents.split(",")] if agents else None
+
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from consilium.analysis.orchestrator import AnalysisOrchestrator
+    from consilium.output.formatters import ResultFormatter
+
+    console.print(
+        Panel(
+            f"[bold]Watchlist:[/bold] {name}\n"
+            f"[bold]Tickers:[/bold] {', '.join(tickers)}\n"
+            f"[bold]Agents:[/bold] {', '.join(agent_filter) if agent_filter else 'All'}\n"
+            f"[bold]Specialists:[/bold] {'Disabled' if skip_specialists else 'Enabled'}",
+            title="Watchlist Analysis",
+            border_style="blue",
+        )
+    )
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Initializing...", total=None)
+
+        async def run_analysis():
+            from consilium.db.connection import close_pool
+
+            try:
+                orchestrator = AnalysisOrchestrator(
+                    settings=settings,
+                    progress_callback=lambda msg: progress.update(task, description=msg),
+                )
+
+                return await orchestrator.analyze(
+                    tickers=tickers,
+                    agent_filter=agent_filter,
+                    include_specialists=not skip_specialists,
+                )
+            finally:
+                await close_pool()
+
+        try:
+            result = asyncio.run(run_analysis())
+        except Exception as e:
+            console.print(f"\n[red]Error during analysis:[/red] {e}")
+            raise typer.Exit(1)
+
+    # Display results
+    formatter = ResultFormatter(console)
+    formatter.display_results(result, verbose=verbose)
 
 
 # ============== History Commands ==============
