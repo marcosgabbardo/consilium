@@ -349,7 +349,7 @@ CREATE TABLE IF NOT EXISTS ask_responses (
     agent_name VARCHAR(100) NOT NULL,
 
     -- Structured response
-    signal VARCHAR(20) NOT NULL,
+    `signal` VARCHAR(20) NOT NULL,
     confidence VARCHAR(20) NOT NULL,
     reasoning TEXT NOT NULL,
     key_factors JSON,
