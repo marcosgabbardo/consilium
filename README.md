@@ -11,6 +11,39 @@
 
 ---
 
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Installation](#installation)
+3. [Investor Agents](#investor-agents)
+   - [Analyze](#analyze)
+   - [Compare](#compare)
+   - [Ask Investor (Q&A)](#ask-investor-qa)
+   - [Agent Management](#agent-management)
+4. [Portfolio Management](#portfolio-management)
+   - [Creating Portfolios](#creating-portfolios)
+   - [Adding Positions](#adding-positions)
+   - [Selling Positions](#selling-positions)
+   - [Transaction History](#transaction-history)
+   - [Portfolio Analysis](#portfolio-analysis)
+   - [CSV Import](#csv-import)
+5. [Watchlists](#watchlists)
+   - [CRUD Operations](#watchlist-crud-operations)
+   - [Watchlist Analysis](#watchlist-analysis)
+6. [Stock Universes](#stock-universes)
+   - [Available Universes](#available-universes)
+   - [Universe Commands](#universe-commands)
+7. [History & Tracking](#history--tracking)
+   - [Analysis History](#analysis-history)
+   - [Q&A History](#qa-history)
+8. [Cost Estimation](#cost-estimation)
+9. [Database Management](#database-management)
+10. [Configuration](#configuration)
+11. [Architecture](#architecture)
+12. [Troubleshooting](#troubleshooting)
+
+---
+
 ## Overview
 
 Consilium simulates a **hedge fund investment committee** where 20 specialized AI agents—each embodying the investment philosophy of legendary investors like Warren Buffett, Charlie Munger, Jim Simons, and Peter Lynch—analyze stocks and reach a weighted consensus.
@@ -51,58 +84,21 @@ The name comes from Latin *consilium* ("council" or "deliberation"), reflecting 
 └─────────────────────────────────────────────────────────────────┘
 ```
 
----
+### Key Features
 
-## Features
-
-- **13 Investor Personalities** — Each with distinct investment philosophies, from value investing to growth, momentum, macro, and **quantitative** strategies
-- **7 Specialist Agents** — Quantitative analysis covering valuation, fundamentals, technicals, sentiment, risk, portfolio fit, and **political risk**
+- **13 Investor Personalities** — Each with distinct investment philosophies
+- **7 Specialist Agents** — Quantitative analysis covering valuation, fundamentals, technicals, sentiment, risk, portfolio fit, and political risk
+- **Ask Investor Q&A** — Direct questions to specific investors about stocks or strategies
 - **Weighted Consensus Algorithm** — Agents vote with configurable weights and confidence levels
-- **Portfolio Management** — Import positions from CSV, track BUY/SELL transactions, realized & unrealized P&L, per-position recommendations
+- **Portfolio Management** — Import positions, track BUY/SELL transactions, realized & unrealized P&L
 - **Cost Estimation** — Shows estimated API costs before execution with user confirmation
-- **Stock Universe Management** — Pre-built universes (S&P 500, NASDAQ 100, Dow 30, MAG7, Brazilian) for batch analysis
+- **Stock Universe Management** — Pre-built universes (S&P 500, NASDAQ 100, Dow 30, MAG7, Brazilian)
 - **Watchlist Management** — Create, manage, and batch-analyze stock watchlists
 - **Asset Comparison** — Side-by-side comparison with ranking and agent consensus matrix
 - **Analysis History** — All analyses automatically saved to MySQL with full tracking
 - **International Markets** — Support for global exchanges (US, Brazil `.SA`, Europe, Asia)
-- **Parallel Execution** — Async architecture for fast multi-agent analysis
 - **Rich CLI Output** — Beautiful tables and panels with detailed reasoning
 - **Export Formats** — JSON, CSV, and Markdown reports
-- **MySQL Caching** — Smart caching of market data with configurable TTLs
-
----
-
-## The Investment Committee
-
-### Investor Agents (13)
-
-| Agent | Style | Philosophy |
-|-------|-------|------------|
-| **Warren Buffett** | Value | Wonderful companies at fair prices, economic moats, long-term compounding |
-| **Charlie Munger** | Value | Mental models, multidisciplinary thinking, quality over price |
-| **Ben Graham** | Value | Quantitative screens, margin of safety, net-net valuations |
-| **Aswath Damodaran** | Value | DCF valuation, story-driven analysis, academic rigor |
-| **Peter Lynch** | Growth | 10-baggers, invest in what you know, PEG ratio |
-| **Phil Fisher** | Growth | Scuttlebutt method, qualitative analysis, long holding periods |
-| **Cathie Wood** | Growth | Disruptive innovation, exponential technologies, 5-year horizons |
-| **Michael Burry** | Contrarian | Deep value, balance sheet analysis, contrarian bets |
-| **Bill Ackman** | Activist | Concentrated positions, operational improvements, catalysts |
-| **Mohnish Pabrai** | Value | Dhandho framework, low-risk/high-uncertainty bets |
-| **Rakesh Jhunjhunwala** | Momentum | Indian markets expertise, growth at reasonable price |
-| **Stanley Druckenmiller** | Macro | Top-down analysis, asymmetric risk/reward, position sizing |
-| **Jim Simons** | Quantitative | Mathematical models, statistical patterns, data-driven decisions |
-
-### Specialist Agents (7)
-
-| Specialist | Focus |
-|------------|-------|
-| **Valuation Analyst** | DCF, comparables, intrinsic value estimation |
-| **Fundamentals Analyst** | Financial statements, profitability, balance sheet strength |
-| **Technical Analyst** | Price patterns, momentum indicators, support/resistance |
-| **Sentiment Analyst** | Market sentiment, institutional positioning, contrarian signals |
-| **Risk Manager** | Volatility, drawdown potential, systematic vs idiosyncratic risk |
-| **Portfolio Manager** | Position sizing, entry strategy, portfolio fit |
-| **Political Risk Analyst** | Electoral cycles, government intervention, geopolitical factors, regulatory risk |
 
 ---
 
@@ -145,11 +141,6 @@ CONSILIUM_DB_PORT=3306
 CONSILIUM_DB_USER=consilium
 CONSILIUM_DB_PASSWORD=your_password
 CONSILIUM_DB_NAME=consilium
-
-# Optional: Customize agent weights (0-10 scale)
-CONSILIUM_WEIGHT_BUFFETT=2.0
-CONSILIUM_WEIGHT_MUNGER=1.8
-CONSILIUM_WEIGHT_SIMONS=1.8
 ```
 
 ### Database Setup
@@ -166,9 +157,45 @@ consilium db init
 
 ---
 
-## Usage
+## Investor Agents
 
-### Basic Analysis
+### The Investment Committee
+
+#### Investor Agents (13)
+
+| Agent | Style | Philosophy |
+|-------|-------|------------|
+| **Warren Buffett** | Value | Wonderful companies at fair prices, economic moats, long-term compounding |
+| **Charlie Munger** | Value | Mental models, multidisciplinary thinking, quality over price |
+| **Ben Graham** | Value | Quantitative screens, margin of safety, net-net valuations |
+| **Aswath Damodaran** | Value | DCF valuation, story-driven analysis, academic rigor |
+| **Peter Lynch** | Growth | 10-baggers, invest in what you know, PEG ratio |
+| **Phil Fisher** | Growth | Scuttlebutt method, qualitative analysis, long holding periods |
+| **Cathie Wood** | Growth | Disruptive innovation, exponential technologies, 5-year horizons |
+| **Michael Burry** | Contrarian | Deep value, balance sheet analysis, contrarian bets |
+| **Bill Ackman** | Activist | Concentrated positions, operational improvements, catalysts |
+| **Mohnish Pabrai** | Value | Dhandho framework, low-risk/high-uncertainty bets |
+| **Rakesh Jhunjhunwala** | Momentum | Indian markets expertise, growth at reasonable price |
+| **Stanley Druckenmiller** | Macro | Top-down analysis, asymmetric risk/reward, position sizing |
+| **Jim Simons** | Quantitative | Mathematical models, statistical patterns, data-driven decisions |
+
+#### Specialist Agents (7)
+
+| Specialist | Focus |
+|------------|-------|
+| **Valuation Analyst** | DCF, comparables, intrinsic value estimation |
+| **Fundamentals Analyst** | Financial statements, profitability, balance sheet strength |
+| **Technical Analyst** | Price patterns, momentum indicators, support/resistance |
+| **Sentiment Analyst** | Market sentiment, institutional positioning, contrarian signals |
+| **Risk Manager** | Volatility, drawdown potential, systematic vs idiosyncratic risk |
+| **Portfolio Manager** | Position sizing, entry strategy, portfolio fit |
+| **Political Risk Analyst** | Electoral cycles, government intervention, geopolitical factors |
+
+---
+
+### Analyze
+
+Run multi-agent analysis on one or more stocks.
 
 ```bash
 # Analyze a single stock
@@ -179,115 +206,36 @@ consilium analyze "AAPL,NVDA,MSFT"
 
 # Verbose output with detailed reasoning
 consilium analyze AAPL --verbose
+
+# International markets
+consilium analyze PETR3.SA    # Brazilian (B3)
+consilium analyze 7203.T      # Tokyo
+consilium analyze BMW.DE      # Frankfurt
 ```
 
-### International Markets
-
-```bash
-# Brazilian stocks (B3 exchange)
-consilium analyze PETR3.SA    # Petrobras
-consilium analyze VALE3.SA    # Vale
-consilium analyze ITUB4.SA    # Itaú
-
-# Other markets
-consilium analyze 7203.T      # Toyota (Tokyo)
-consilium analyze BMW.DE      # BMW (Frankfurt)
-consilium analyze 0700.HK     # Tencent (Hong Kong)
-```
-
-### Filter Agents
+#### Filter Agents
 
 ```bash
 # Use only specific investors
 consilium analyze TSLA --agents buffett,munger,burry
 
-# Include the quantitative analyst
-consilium analyze NVDA --agents simons,burry,druckenmiller
-
 # Skip specialist analysis (faster)
 consilium analyze AAPL --skip-specialists
-# Or use the short flag
 consilium analyze AAPL -s
 ```
 
-### Analysis History
-
-All analyses are automatically saved to the database for future reference.
+#### Export Results
 
 ```bash
-# List recent analyses
-consilium history list
-
-# Filter by ticker
-consilium history list --ticker AAPL --limit 20
-
-# Filter by date and signal
-consilium history list --days 7 --signal BUY
-
-# Show details of a specific analysis
-consilium history show abc123
-consilium history show abc123 --verbose
-
-# Export history to file
-consilium history export -o history.csv --days 30
-consilium history export -o history.json -f json --ticker AAPL
-```
-
-### Export Results
-
-```bash
-# Export to JSON
+# Export to JSON, CSV, or Markdown
 consilium analyze AMZN --export json -o analysis.json
-
-# Export to CSV
 consilium analyze AMZN --export csv -o analysis.csv
-
-# Export to Markdown
 consilium analyze AMZN --export md -o analysis.md
 ```
 
-### Cost Estimation
+---
 
-Before any API call, Consilium shows an estimated cost breakdown and asks for confirmation.
-
-```bash
-# Standard analysis (shows cost, asks for confirmation)
-consilium analyze AAPL
-
-# Skip confirmation (for scripts/automation)
-consilium analyze AAPL --yes
-consilium compare AAPL,MSFT,GOOGL --yes
-consilium watchlist analyze tech-giants --yes
-consilium universe analyze mag7 --yes
-```
-
-**Example Output:**
-
-```
-╭────────────────────────────── Cost Estimation ───────────────────────────────╮
-│ Model: Claude Opus 4.5                                                       │
-│ Model ID: claude-opus-4-5-20251101                                           │
-│                                                                              │
-│  Component    Calls  Input Tokens  Output Tokens   Cost                      │
-│  Specialists      7        ~4,200         ~3,500  $0.33                      │
-│  Investors       13       ~32,500         ~9,100  $1.17                      │
-│  Total           20       ~36,700        ~12,600  $1.50                      │
-│                                                                              │
-│ Estimated Cost: $1.50 USD                                                    │
-╰──────────────────────────────────────────────────────────────────────────────╯
-Proceed with analysis? [y/N]:
-```
-
-**Estimated Costs (Claude Opus 4.5):**
-
-| Scenario | API Calls | Cost |
-|----------|-----------|------|
-| 1 ticker (full pipeline) | 20 | ~$1.50 |
-| 1 ticker (no specialists) | 13 | ~$0.94 |
-| 3 tickers (compare) | 60 | ~$4.50 |
-| MAG7 universe | 140 | ~$10.50 |
-
-### Asset Comparison
+### Compare
 
 Compare multiple assets side-by-side with ranked comparisons and agent consensus matrices.
 
@@ -316,12 +264,6 @@ consilium compare AAPL,MSFT --agents buffett,munger,simons --verbose
 **Example Output:**
 
 ```
-╭──────────────────────────── Consilium Compare ────────────────────────────╮
-│ Comparison Analysis                                                        │
-│ Tickers: AAPL, MSFT, GOOGL, NVDA                                          │
-│ Agents: 13 | Time: 45.2s                                                   │
-╰────────────────────────────────────────────────────────────────────────────╯
-
             Asset Comparison (sorted by score)
 ┏━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
 ┃ Rank ┃ Ticker ┃ Signal     ┃ Score  ┃ Confidence ┃ Agreement ┃ Votes          ┃
@@ -333,18 +275,80 @@ consilium compare AAPL,MSFT --agents buffett,munger,simons --verbose
 └──────┴────────┴────────────┴────────┴────────────┴───────────┴────────────────┘
 
 Winner: NVDA with STRONG_BUY signal and 92% agreement
-
-                Agent Consensus Matrix
-┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━┓
-┃ Agent               ┃ NVDA   ┃ MSFT   ┃ AAPL   ┃ GOOGL  ┃
-┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━┩
-│ Warren Buffett      │ BUY    │ BUY    │ HOLD   │ HOLD   │
-│ Charlie Munger      │ BUY    │ BUY    │ BUY    │ HOLD   │
-│ Peter Lynch         │ S_BUY  │ BUY    │ BUY    │ BUY    │
-│ Michael Burry       │ HOLD   │ SELL   │ SELL   │ SELL   │
-│ Jim Simons          │ S_BUY  │ BUY    │ HOLD   │ HOLD   │
-└─────────────────────┴────────┴────────┴────────┴────────┘
 ```
+
+---
+
+### Ask Investor (Q&A)
+
+Ask direct questions to specific investor agents about stocks, strategies, or market views.
+
+```bash
+# Ask a single investor
+consilium ask "O que você acha de TSLA?" --agent buffett
+consilium ask "What's your view on NVDA for the next 2 years?" --agent lynch
+
+# Ask multiple investors and compare responses
+consilium ask "Vale investir em AAPL agora?" --agents buffett,munger,graham
+consilium ask "Should I buy IBIT and short MSTR?" --agents buffett,simons
+
+# With explicit ticker (forces market data fetch)
+consilium ask "Is it overvalued?" --ticker GOOGL --agent damodaran
+
+# Philosophical questions (no market data)
+consilium ask "What do you think about investing in AI?" --agent buffett --no-data
+
+# Skip cost confirmation
+consilium ask "Quick take on META?" --agent wood --yes
+```
+
+**Example Output:**
+
+```
+╭──────────────────── Warren Buffett's Response ────────────────────╮
+│                                                                    │
+│ Question: "O que você acha de TSLA?"                               │
+│ Tickers: TSLA (current: $248.50)                                   │
+│                                                                    │
+│ Signal: HOLD          Confidence: MEDIUM          Score: 0.0      │
+│                                                                    │
+│ ─────────────────────────────────────────────────────────────────  │
+│                                                                    │
+│ "Tesla represents a fascinating case study in modern investing.    │
+│ The company has achieved remarkable things under Elon Musk's       │
+│ leadership, building a dominant position in EVs and creating       │
+│ substantial brand value..."                                        │
+│                                                                    │
+│ Key Factors:                                                       │
+│ • EV market leadership provides competitive moat                   │
+│ • Manufacturing efficiency is impressive                           │
+│                                                                    │
+│ Risks:                                                             │
+│ • Intensifying competition from legacy automakers                  │
+│ • Margin compression as EV market matures                          │
+│                                                                    │
+│ Time Horizon: 3-5 years                                            │
+╰────────────────────────────────────────────────────────────────────╯
+
+Cost: $0.08 | Tokens: 2,100 in / 650 out | Time: 3.2s
+```
+
+**Multiple Investors Comparison:**
+
+```
+                        Response Summary
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Investor            ┃ Signal   ┃ Confidence ┃ Score    ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ Warren Buffett      │ BUY      │ HIGH       │ +42.5    │
+│ Charlie Munger      │ BUY      │ HIGH       │ +42.5    │
+│ Benjamin Graham     │ HOLD     │ MEDIUM     │ 0.0      │
+└─────────────────────┴──────────┴────────────┴──────────┘
+
+Consensus: BUY (2 bullish, 1 neutral, 0 bearish)
+```
+
+---
 
 ### Agent Management
 
@@ -363,9 +367,148 @@ consilium agents list --type specialist
 consilium agents info buffett
 ```
 
-### Watchlist Management
+---
+
+## Portfolio Management
+
+Manage your investment portfolios with position tracking, P&L analysis, CSV import, and multi-agent analysis.
+
+### Creating Portfolios
+
+```bash
+# Create a new portfolio
+consilium portfolio create "Tech Holdings" -d "My tech investments"
+
+# List all portfolios
+consilium portfolio list
+
+# Delete a portfolio
+consilium portfolio delete "Tech Holdings"
+consilium portfolio delete "Tech Holdings" --force  # Skip confirmation
+```
+
+### Adding Positions
+
+```bash
+# Add positions manually (BUY transactions)
+consilium portfolio add "Tech Holdings" AAPL 100 150.00 --date 2024-01-15
+consilium portfolio add "Tech Holdings" NVDA 50 450.00 --date 2024-02-01
+consilium portfolio add "Tech Holdings" MSFT 30 380.00  # Uses today's date
+
+# Show portfolio with live P&L
+consilium portfolio show "Tech Holdings"
+consilium portfolio show "Tech Holdings" --refresh  # Fetch latest prices
+```
+
+### Selling Positions
+
+```bash
+# Sell shares (records SELL transaction with P&L calculation)
+consilium portfolio sell "Tech Holdings" AAPL 50 180.00
+consilium portfolio sell "Tech Holdings" NVDA 25 520.00 --date 2024-06-15
+consilium portfolio sell "Tech Holdings" MSFT 10 400.00 --fees 9.99 -n "Taking profits"
+```
+
+### Transaction History
+
+```bash
+# View transaction history (buys and sells)
+consilium portfolio transactions "Tech Holdings"
+consilium portfolio transactions "Tech Holdings" --ticker AAPL
+consilium portfolio transactions "Tech Holdings" --type sell
+consilium portfolio transactions "Tech Holdings" --limit 100
+
+# View realized P&L summary (from closed positions)
+consilium portfolio pnl "Tech Holdings"
+consilium portfolio pnl "Tech Holdings" --ticker AAPL
+```
+
+**Transaction History Output:**
+
+```
+                           Transaction History
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃ Date       ┃ Ticker ┃ Type ┃  Qty   ┃  Price  ┃    Total   ┃ Realized P&L ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ 2024-01-15 │ AAPL   │ BUY  │    100 │ $150.00 │ $15,000.00 │          -   │
+│ 2024-03-01 │ AAPL   │ BUY  │     50 │ $160.00 │  $8,000.00 │          -   │
+│ 2024-06-15 │ AAPL   │ SELL │     75 │ $180.00 │ $13,500.00 │   +$2,250.00 │
+└────────────┴────────┴──────┴────────┴─────────┴────────────┴──────────────┘
+```
+
+### Portfolio Analysis
+
+```bash
+# Analyze portfolio with multi-agent system
+consilium portfolio analyze "Tech Holdings"
+consilium portfolio analyze "Tech Holdings" --verbose
+consilium portfolio analyze "Tech Holdings" --agents buffett,munger,simons
+consilium portfolio analyze "Tech Holdings" --skip-specialists --yes
+
+# Export analysis results
+consilium portfolio analyze "Tech Holdings" --export json -o analysis.json
+
+# View analysis history
+consilium portfolio analysis-history "Tech Holdings"
+```
+
+**Portfolio Summary Output:**
+
+```
+╭───────────────────────────── Portfolio Summary ──────────────────────────────╮
+│ Tech Holdings                                                                │
+│                                                                              │
+│ Total Value: $51,156.96 USD                                                  │
+│ Cost Basis: $31,350.00                                                       │
+│                                                                              │
+│ Unrealized P&L: +$19,806.96 (+63.18%)                                        │
+│ Realized P&L: +$2,250.00                                                     │
+│ Total P&L: +$22,056.96                                                       │
+│                                                                              │
+│ Positions: 4 | Transactions: 12                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+### CSV Import
+
+Import positions from brokerage CSV exports with automatic column detection.
+
+```bash
+# Import positions from CSV
+consilium portfolio import "Tech Holdings" holdings.csv
+consilium portfolio import "Tech Holdings" holdings.csv --preview  # Preview first
+
+# Import with custom column mapping
+consilium portfolio import "Tech Holdings" broker_export.csv \
+    --ticker symbol --quantity shares --price avg_cost
+
+# View import history
+consilium portfolio import-history "Tech Holdings"
+```
+
+**Recognized CSV Headers:**
+
+| Field | Recognized Headers |
+|-------|-------------------|
+| Ticker | ticker, symbol, stock, security, code, asset |
+| Quantity | quantity, qty, shares, units, amount, position |
+| Price | purchase_price, price, cost, avg_cost, buy_price |
+| Date | purchase_date, date, buy_date, trade_date |
+| Type | type, transaction_type, action, side, buy_sell |
+| Fees | fees, fee, commission, brokerage, charges |
+| Notes | notes, note, comment, description, memo |
+
+**Transaction Type Values:**
+- BUY: `buy`, `b`, `compra`, `long`, `+`, `bought`, `purchase`
+- SELL: `sell`, `s`, `venda`, `short`, `-`, `sold`, `sale`
+
+---
+
+## Watchlists
 
 Organize your stocks into watchlists for easier tracking and batch analysis.
+
+### Watchlist CRUD Operations
 
 ```bash
 # Create a new watchlist
@@ -384,42 +527,27 @@ consilium watchlist add tech-giants AMZN TSLA
 # Remove tickers from watchlist
 consilium watchlist remove tech-giants META
 
-# Analyze all tickers in a watchlist
-consilium watchlist analyze tech-giants
-consilium watchlist analyze tech-giants --verbose
-consilium watchlist analyze tech-giants --agents buffett,munger
-
 # Delete a watchlist
 consilium watchlist delete old-list
 consilium watchlist delete old-list --force  # Skip confirmation
 ```
 
-**Example Output:**
+### Watchlist Analysis
 
-```
-                               Watchlists
-┏━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━┓
-┃ Name         ┃ Description           ┃ Created    ┃ Updated    ┃
-┡━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━┩
-│ tech-giants  │ -                     │ 2026-01-11 │ 2026-01-11 │
-│ value-picks  │ Dividend aristocrats  │ 2026-01-11 │ 2026-01-11 │
-└──────────────┴───────────────────────┴────────────┴────────────┘
-
-╭─────────────────────── Watchlist: tech-giants ────────────────────────╮
-│ Description: Big tech companies                                       │
-│ Tickers: 5                                                            │
-│ Created: 2026-01-11 14:38                                             │
-│ Updated: 2026-01-11 14:39                                             │
-│                                                                       │
-│ AAPL, MSFT, GOOGL, NVDA, AMZN                                         │
-╰───────────────────────────────────────────────────────────────────────╯
+```bash
+# Analyze all tickers in a watchlist
+consilium watchlist analyze tech-giants
+consilium watchlist analyze tech-giants --verbose
+consilium watchlist analyze tech-giants --agents buffett,munger
 ```
 
-### Stock Universe Management
+---
+
+## Stock Universes
 
 Access pre-built stock universes from major indices for batch analysis.
 
-**Available Universes:**
+### Available Universes
 
 | Universe | Description | Tickers |
 |----------|-------------|---------|
@@ -433,6 +561,8 @@ Access pre-built stock universes from major indices for batch analysis.
 | `ftse100` | FTSE 100 - UK largest companies | 100 |
 | `nikkei225` | NIKKEI 225 - Japanese Blue Chips | 225 |
 | `eurostoxx50` | Euro Stoxx 50 - Eurozone Blue Chips | 50 |
+
+### Universe Commands
 
 ```bash
 # List all available universes (with population status)
@@ -463,196 +593,95 @@ consilium universe delete old-universe
 consilium universe delete old-universe --force
 ```
 
-**Example Output:**
+---
 
-```
-                           Available Stock Universes
-┏━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
-┃ Name        ┃ Description                                 ┃ Status        ┃
-┡━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
-│ dow30       │ Dow Jones Industrial Average - 30 Blue...   │ 30 tickers    │
-│ mag7        │ Magnificent 7 - Tech megacaps               │ 7 tickers     │
-│ nasdaq100   │ NASDAQ 100 - Top tech-heavy US stocks       │ Not populated │
-│ sp500       │ S&P 500 - Large Cap US equities             │ Not populated │
-└─────────────┴─────────────────────────────────────────────┴───────────────┘
+## History & Tracking
 
-╭────────────────────────────── Universe: mag7 ───────────────────────────────╮
-│ Description: Magnificent 7 - Tech megacaps                                  │
-│ Tickers: 7                                                                  │
-│ Last Updated: 2026-01-11 14:57                                              │
-│                                                                             │
-│ Tickers:                                                                    │
-│ AAPL, MSFT, GOOGL, AMZN, META, NVDA, TSLA                                   │
-╰─────────────────────────────────────────────────────────────────────────────╯
-```
+### Analysis History
 
-### Portfolio Management
-
-Manage your investment portfolios with position tracking, P&L analysis, CSV import, and multi-agent analysis.
+All analyses are automatically saved to the database for future reference.
 
 ```bash
-# Create a new portfolio
-consilium portfolio create "Tech Holdings" -d "My tech investments"
+# List recent analyses
+consilium history list
 
-# Add positions manually
-consilium portfolio add "Tech Holdings" AAPL 100 150.00 --date 2024-01-15
-consilium portfolio add "Tech Holdings" NVDA 50 450.00 --date 2024-02-01
-consilium portfolio add "Tech Holdings" MSFT 30 380.00  # Uses today's date
+# Filter by ticker
+consilium history list --ticker AAPL --limit 20
 
-# List all portfolios
-consilium portfolio list
+# Filter by date and signal
+consilium history list --days 7 --signal BUY
 
-# Show portfolio with live P&L
-consilium portfolio show "Tech Holdings"
-consilium portfolio show "Tech Holdings" --refresh  # Fetch latest prices
+# Show details of a specific analysis
+consilium history show abc123
+consilium history show abc123 --verbose
 
-# Import positions from CSV
-consilium portfolio import "Tech Holdings" holdings.csv
-consilium portfolio import "Tech Holdings" holdings.csv --preview  # Preview first
-
-# Import with custom column mapping
-consilium portfolio import "Tech Holdings" broker_export.csv \
-    --ticker symbol --quantity shares --price avg_cost
-
-# View import history
-consilium portfolio import-history "Tech Holdings"
-
-# Remove positions for a ticker
-consilium portfolio remove "Tech Holdings" NVDA
-consilium portfolio remove "Tech Holdings" NVDA --force  # Skip confirmation
-
-# Analyze portfolio with multi-agent system
-consilium portfolio analyze "Tech Holdings"
-consilium portfolio analyze "Tech Holdings" --verbose
-consilium portfolio analyze "Tech Holdings" --agents buffett,munger,simons
-consilium portfolio analyze "Tech Holdings" --skip-specialists --yes
-
-# Export analysis results
-consilium portfolio analyze "Tech Holdings" --export json -o analysis.json
-
-# View analysis history
-consilium portfolio analysis-history "Tech Holdings"
-
-# Delete a portfolio
-consilium portfolio delete "Tech Holdings"
-consilium portfolio delete "Tech Holdings" --force
+# Export history to file
+consilium history export -o history.csv --days 30
+consilium history export -o history.json -f json --ticker AAPL
 ```
 
-#### Transaction Tracking (BUY/SELL)
+### Q&A History
 
-Track both purchases and sales with realized P&L calculation using weighted average cost basis:
+Q&A sessions with investors are also saved for reference.
 
 ```bash
-# Sell shares (records SELL transaction with P&L calculation)
-consilium portfolio sell "Tech Holdings" AAPL 50 180.00
-consilium portfolio sell "Tech Holdings" NVDA 25 520.00 --date 2024-06-15
-consilium portfolio sell "Tech Holdings" MSFT 10 400.00 --fees 9.99 -n "Taking profits"
+# View Q&A history
+consilium ask history
+consilium ask history --agent buffett --limit 10
 
-# View transaction history (buys and sells)
-consilium portfolio transactions "Tech Holdings"
-consilium portfolio transactions "Tech Holdings" --ticker AAPL
-consilium portfolio transactions "Tech Holdings" --type sell
-consilium portfolio transactions "Tech Holdings" --limit 100
-
-# View realized P&L summary (from closed positions)
-consilium portfolio pnl "Tech Holdings"
-consilium portfolio pnl "Tech Holdings" --ticker AAPL
+# Show details of a specific question
+consilium ask show 1
 ```
 
-**Transaction History Output:**
+---
+
+## Cost Estimation
+
+Before any API call, Consilium shows an estimated cost breakdown and asks for confirmation.
+
+```bash
+# Standard analysis (shows cost, asks for confirmation)
+consilium analyze AAPL
+
+# Skip confirmation (for scripts/automation)
+consilium analyze AAPL --yes
+consilium compare AAPL,MSFT,GOOGL --yes
+consilium watchlist analyze tech-giants --yes
+consilium universe analyze mag7 --yes
+consilium ask "What about NVDA?" --agent buffett --yes
 ```
-                           Transaction History
-┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃ Date       ┃ Ticker ┃ Type ┃  Qty   ┃  Price  ┃    Total   ┃ Realized P&L ┃
-┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2024-01-15 │ AAPL   │ BUY  │    100 │ $150.00 │ $15,000.00 │          -   │
-│ 2024-03-01 │ AAPL   │ BUY  │     50 │ $160.00 │  $8,000.00 │          -   │
-│ 2024-06-15 │ AAPL   │ SELL │     75 │ $180.00 │ $13,500.00 │   +$2,250.00 │
-└────────────┴────────┴──────┴────────┴─────────┴────────────┴──────────────┘
-```
-
-**CSV Import Features:**
-
-The importer automatically detects column names from common brokerage export formats:
-
-| Field | Recognized Headers |
-|-------|-------------------|
-| Ticker | ticker, symbol, stock, security, code, asset |
-| Quantity | quantity, qty, shares, units, amount, position |
-| Price | purchase_price, price, cost, avg_cost, buy_price |
-| Date | purchase_date, date, buy_date, trade_date |
-| Type | type, transaction_type, action, side, buy_sell |
-| Fees | fees, fee, commission, brokerage, charges |
-| Notes | notes, note, comment, description, memo |
-
-**Transaction Type Values:**
-- BUY: `buy`, `b`, `compra`, `long`, `+`, `bought`, `purchase`
-- SELL: `sell`, `s`, `venda`, `short`, `-`, `sold`, `sale`
-
-**Supported Date Formats:**
-- `YYYY-MM-DD`, `YYYY/MM/DD`
-- `MM/DD/YYYY`, `MM-DD-YYYY`
-- `DD/MM/YYYY`, `DD-MM-YYYY`
 
 **Example Output:**
 
 ```
-╭───────────────────────────── Portfolio Summary ──────────────────────────────╮
-│ Tech Holdings                                                                │
-│ My tech investments                                                          │
+╭────────────────────────────── Cost Estimation ───────────────────────────────╮
+│ Model: Claude Opus 4.5                                                       │
+│ Model ID: claude-opus-4-5-20251101                                           │
 │                                                                              │
-│ Total Value: $51,156.96 USD                                                  │
-│ Cost Basis: $31,350.00                                                       │
-│ P&L: +$19,806.96 (+63.18%)                                                   │
+│  Component    Calls  Input Tokens  Output Tokens   Cost                      │
+│  Specialists      7        ~4,200         ~3,500  $0.33                      │
+│  Investors       13       ~32,500         ~9,100  $1.17                      │
+│  Total           20       ~36,700        ~12,600  $1.50                      │
 │                                                                              │
-│ Positions: 4                                                                 │
-│ Concentration Risk: CRITICAL (Top 3: 85.5%)                                  │
+│ Estimated Cost: $1.50 USD                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
-Sector Allocation
-  Technology           ████████████████████░░░░░░░░░░  69.4% ($35,523)
-  Communication Services ████░░░░░░░░░░░░░░░░░░░░░░░░░░  16.1% ($8,214)
-  Consumer Cyclical    ████░░░░░░░░░░░░░░░░░░░░░░░░░░  14.5% ($7,420)
-
-                                  Holdings
-┏━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━┓
-┃ Ticker ┃ Shares ┃ Avg Cost ┃ Current ┃      Value ┃         P&L ┃   P&L % ┃
-┡━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━┩
-│ AAPL   │    100 │  $150.00 │ $259.37 │ $25,937.00 │ +$10,937.00 │  +72.9% │
-│ AMZN   │     30 │  $175.00 │ $247.34 │  $7,420.11 │  +$2,170.11 │  +41.3% │
-│ GOOGL  │     25 │  $140.00 │ $328.57 │  $8,214.25 │  +$4,714.25 │ +134.7% │
-│ MSFT   │     20 │  $380.00 │ $479.28 │  $9,585.60 │  +$1,985.60 │  +26.1% │
-└────────┴────────┴──────────┴─────────┴────────────┴─────────────┴─────────┘
+Proceed with analysis? [y/N]:
 ```
 
-**Portfolio Analysis Output:**
+**Estimated Costs (Claude Opus 4.5):**
 
-```
-╭────────────────── Portfolio Analysis Summary ──────────────────╮
-│ Tech Holdings                                                   │
-│                                                                 │
-│ Portfolio Signal: BUY                                           │
-│ Confidence: HIGH                                                │
-│ Score: 62.5                                                     │
-│                                                                 │
-│ Total Value: $51,156.96                                         │
-│ P&L: +$19,806.96 (+63.18%)                                      │
-│                                                                 │
-│ Concentration Risk: HIGH (Top 3: 85.5%)                         │
-╰─────────────────────────────────────────────────────────────────╯
+| Scenario | API Calls | Cost |
+|----------|-----------|------|
+| 1 ticker (full pipeline) | 20 | ~$1.50 |
+| 1 ticker (no specialists) | 13 | ~$0.94 |
+| 3 tickers (compare) | 60 | ~$4.50 |
+| MAG7 universe | 140 | ~$10.50 |
+| Q&A (1 agent) | 1 | ~$0.08 |
+| Q&A (3 agents) | 3 | ~$0.25 |
 
-              Position Recommendations
-┏━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━┓
-┃ Ticker ┃ Signal     ┃ Action   ┃ Weight ┃ Target   ┃
-┡━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━┩
-│ AAPL   │ BUY        │ HOLD     │ 50.7%  │ $280.00  │
-│ GOOGL  │ STRONG_BUY │ BUY_MORE │ 16.1%  │ $380.00  │
-│ AMZN   │ BUY        │ HOLD     │ 14.5%  │ $270.00  │
-│ MSFT   │ HOLD       │ HOLD     │ 18.7%  │ $480.00  │
-└────────┴────────────┴──────────┴────────┴──────────┘
-```
+---
 
-### System Commands
+## Database Management
 
 ```bash
 # Check configuration status
@@ -668,169 +697,25 @@ consilium db init
 consilium --version
 ```
 
----
+### Database Tables
 
-## Political Risk Analysis
-
-The **Political Risk Analyst** is a specialized agent that evaluates political factors affecting investments:
-
-### What It Analyzes
-
-| Factor | Description |
-|--------|-------------|
-| **Electoral Cycles** | Upcoming elections, political transitions, government stability |
-| **Government Intervention** | State ownership, price controls, political appointments |
-| **Regulatory Environment** | Pending regulations, tax policy changes, licensing risks |
-| **Geopolitical Factors** | Sanctions, trade wars, export market dependencies |
-| **Institutional Stability** | Rule of law, regulatory independence, property rights |
-
-### Score Interpretation
-
-| Score Range | Interpretation |
-|-------------|----------------|
-| +50 to +100 | Political tailwinds (favorable policies, deregulation) |
-| +10 to +49 | Slightly favorable political environment |
-| -10 to +10 | Neutral political risk |
-| -49 to -10 | Elevated political risk |
-| -100 to -50 | High political risk (consider avoiding) |
-
-### Example: State-Owned Companies
-
-```bash
-# Petrobras (Brazilian state oil company) - high political exposure
-consilium analyze PETR3.SA --verbose
-
-# The Political Risk Analyst will flag:
-# - Electoral cycle risks
-# - History of government intervention
-# - Price control exposure
-# - Political appointment risks
-```
-
----
-
-## Consensus Algorithm
-
-The weighted consensus algorithm combines individual agent signals into a final recommendation:
-
-### Signal Scores
-| Signal | Score |
-|--------|-------|
-| STRONG_BUY | +100 |
-| BUY | +50 |
-| HOLD | 0 |
-| SELL | -50 |
-| STRONG_SELL | -100 |
-
-### Confidence Multipliers
-| Confidence | Multiplier |
-|------------|------------|
-| VERY_HIGH | 1.0 |
-| HIGH | 0.85 |
-| MEDIUM | 0.7 |
-| LOW | 0.5 |
-| VERY_LOW | 0.3 |
-
-### Calculation
-
-```
-weighted_score = Σ(signal_score × agent_weight × confidence_mult) / Σ(weight × conf)
-```
-
-### Final Signal Thresholds
-| Condition | Signal |
-|-----------|--------|
-| score ≥ 60 | STRONG_BUY |
-| score ≥ 20 | BUY |
-| score > -20 | HOLD |
-| score > -60 | SELL |
-| score ≤ -60 | STRONG_SELL |
-
----
-
-## Example Output
-
-```
-╭────────────────────────────── Analysis Request ──────────────────────────────╮
-│ Analyzing: AAPL                                                              │
-│ Agents: All (13 investors + 7 specialists)                                   │
-│ Specialists: Enabled                                                         │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-╭────────────────────────────────── Summary ───────────────────────────────────╮
-│ Consilium Analysis Complete                                                  │
-│ Tickers: AAPL                                                                │
-│ Agents: 20 | Time: 45.2s                                                     │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-╭──────────────────────────── Consensus: AAPL ─────────────────────────────────╮
-│ AAPL                                                                         │
-│                                                                              │
-│ Signal: BUY                                                                  │
-│ Confidence: HIGH                                                             │
-│ Score: 42.3                                                                  │
-│                                                                              │
-│ Votes: 8 Buy | 3 Hold | 2 Sell                                               │
-│ Agreement: 62%                                                               │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭──────────────────────────────────────────────────────────────────────────────╮
-│ Key Themes                                                                   │
-│   - Strong ecosystem and customer loyalty (economic moat)                    │
-│   - Services segment driving high-margin recurring revenue                   │
-│   - Exceptional cash flow generation supports buybacks                       │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭──────────────────────────────────────────────────────────────────────────────╮
-│ Risks                                                                        │
-│   - iPhone sales deceleration in mature markets                              │
-│   - China exposure and regulatory headwinds                                  │
-│   - Valuation premium limits upside potential                                │
-╰──────────────────────────────────────────────────────────────────────────────╯
-```
-
----
-
-## Architecture
-
-```
-consilium/
-├── cli.py                 # Typer CLI application
-├── config.py              # Pydantic Settings configuration
-├── core/
-│   ├── models.py          # Stock, AgentResponse, ConsensusResult
-│   ├── portfolio_models.py # Portfolio, Position, Analysis models
-│   ├── enums.py           # SignalType, ConfidenceLevel, etc.
-│   └── exceptions.py      # Custom exception hierarchy
-├── data/
-│   ├── yahoo.py           # Yahoo Finance data provider
-│   ├── cache.py           # Cache-aside pattern with MySQL
-│   └── universes.py       # Stock universe data provider
-├── db/
-│   ├── connection.py      # Async MySQL connection pool
-│   ├── migrations.py      # Schema DDL (versioned migrations)
-│   ├── repository.py      # Analysis/Watchlist data access
-│   └── portfolio_repository.py  # Portfolio data access layer
-├── agents/
-│   ├── base.py            # BaseAgent, InvestorAgent, SpecialistAgent
-│   └── registry.py        # Agent factory and discovery
-├── prompts/
-│   ├── investors/         # 13 investor personality YAMLs
-│   └── specialists/       # 7 specialist analysis YAMLs
-├── llm/
-│   ├── client.py          # Async Anthropic client with retry
-│   ├── cost_estimator.py  # API cost estimation
-│   └── prompts.py         # Prompt builder with templates
-├── analysis/
-│   ├── orchestrator.py    # Multi-agent pipeline coordination
-│   └── consensus.py       # Weighted voting algorithm
-├── portfolio/
-│   ├── importer.py        # CSV import with auto-detection
-│   └── analyzer.py        # Portfolio analysis orchestration
-└── output/
-    ├── formatters.py      # Rich tables and panels
-    ├── comparison.py      # Asset comparison formatter
-    ├── portfolio_formatter.py  # Portfolio display formatter
-    └── exporters.py       # JSON, CSV, MD export
-```
+| Table | Purpose |
+|-------|---------|
+| `analysis_history` | All analysis results with consensus |
+| `agent_responses` | Individual agent recommendations |
+| `specialist_reports` | Specialist analysis reports |
+| `market_data_cache` | Cached Yahoo Finance data |
+| `watchlists` | User-defined stock lists |
+| `stock_universes` | Pre-built index universes |
+| `price_history` | Historical price data |
+| `portfolios` | User investment portfolios |
+| `portfolio_positions` | Individual positions in portfolios |
+| `portfolio_transactions` | BUY/SELL transaction history |
+| `portfolio_imports` | CSV import history |
+| `portfolio_analysis` | Portfolio-level analysis results |
+| `ask_questions` | Q&A session history |
+| `ask_responses` | Individual agent Q&A responses |
+| `schema_versions` | Migration tracking |
 
 ---
 
@@ -872,40 +757,83 @@ CONSILIUM_THRESHOLD_SELL=-20
 CONSILIUM_THRESHOLD_STRONG_SELL=-60
 ```
 
----
+### Consensus Algorithm
 
-## Database Schema
+The weighted consensus algorithm combines individual agent signals:
 
-Consilium uses MySQL with versioned migrations:
+| Signal | Score |
+|--------|-------|
+| STRONG_BUY | +100 |
+| BUY | +50 |
+| HOLD | 0 |
+| SELL | -50 |
+| STRONG_SELL | -100 |
 
-```bash
-# Check current schema version
-consilium db status
+| Confidence | Multiplier |
+|------------|------------|
+| VERY_HIGH | 1.0 |
+| HIGH | 0.85 |
+| MEDIUM | 0.7 |
+| LOW | 0.5 |
+| VERY_LOW | 0.3 |
 
-# Apply pending migrations
-consilium db init
+```
+weighted_score = Σ(signal_score × agent_weight × confidence_mult) / Σ(weight × conf)
 ```
 
-### Tables
-
-| Table | Purpose |
-|-------|---------|
-| `analysis_history` | All analysis results with consensus |
-| `agent_responses` | Individual agent recommendations |
-| `specialist_reports` | Specialist analysis reports |
-| `market_data_cache` | Cached Yahoo Finance data |
-| `watchlists` | User-defined stock lists |
-| `stock_universes` | Pre-built index universes (S&P 500, etc.) |
-| `price_history` | Historical price data (for backtesting) |
-| `portfolios` | User investment portfolios |
-| `portfolio_positions` | Individual positions in portfolios |
-| `portfolio_imports` | CSV import history |
-| `portfolio_analysis` | Portfolio-level analysis results |
-| `schema_versions` | Migration tracking |
-
 ---
 
-## Tech Stack
+## Architecture
+
+```
+consilium/
+├── cli.py                 # Typer CLI application
+├── config.py              # Pydantic Settings configuration
+├── core/
+│   ├── models.py          # Stock, AgentResponse, ConsensusResult
+│   ├── portfolio_models.py # Portfolio, Position, Analysis models
+│   ├── enums.py           # SignalType, ConfidenceLevel, etc.
+│   └── exceptions.py      # Custom exception hierarchy
+├── data/
+│   ├── yahoo.py           # Yahoo Finance data provider
+│   ├── cache.py           # Cache-aside pattern with MySQL
+│   └── universes.py       # Stock universe data provider
+├── db/
+│   ├── connection.py      # Async MySQL connection pool
+│   ├── migrations.py      # Schema DDL (versioned migrations)
+│   ├── repository.py      # Analysis/Watchlist data access
+│   ├── portfolio_repository.py  # Portfolio data access layer
+│   └── ask_repository.py  # Q&A history persistence
+├── agents/
+│   ├── base.py            # BaseAgent, InvestorAgent, SpecialistAgent
+│   └── registry.py        # Agent factory and discovery
+├── prompts/
+│   ├── investors/         # 13 investor personality YAMLs
+│   └── specialists/       # 7 specialist analysis YAMLs
+├── llm/
+│   ├── client.py          # Async Anthropic client with retry
+│   ├── cost_estimator.py  # API cost estimation
+│   ├── prompts.py         # Prompt builder with templates
+│   └── ask_prompts.py     # Q&A-specific prompts
+├── analysis/
+│   ├── orchestrator.py    # Multi-agent pipeline coordination
+│   └── consensus.py       # Weighted voting algorithm
+├── ask/
+│   ├── orchestrator.py    # Q&A orchestration
+│   ├── models.py          # AskResponse, AskResult
+│   └── ticker_extractor.py # Extract tickers from questions
+├── portfolio/
+│   ├── importer.py        # CSV import with auto-detection
+│   └── analyzer.py        # Portfolio analysis orchestration
+└── output/
+    ├── formatters.py      # Rich tables and panels
+    ├── comparison.py      # Asset comparison formatter
+    ├── ask_formatter.py   # Q&A output formatter
+    ├── portfolio_formatter.py  # Portfolio display formatter
+    └── exporters.py       # JSON, CSV, MD export
+```
+
+### Tech Stack
 
 | Component | Technology |
 |-----------|------------|
@@ -968,12 +896,13 @@ consilium analyze PETR3      # Wrong - will get 404
 - [x] Cost estimation with user confirmation
 - [x] Asset comparison (side-by-side analysis)
 - [x] Portfolio management (import, P&L tracking, analysis)
+- [x] Transaction tracking (BUY/SELL with realized P&L)
+- [x] Ask Investor Q&A (direct questions to agents)
 - [ ] Backtesting engine
 - [ ] Advanced screening with presets
 - [ ] Agent debates (bull vs bear)
 - [ ] Web dashboard interface
 - [ ] Slack/Discord integration for alerts
-- [ ] Custom agent personality creation
 
 ---
 

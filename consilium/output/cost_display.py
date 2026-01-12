@@ -65,3 +65,29 @@ class CostDisplay:
             f"[dim]Estimated cost:[/dim] [bold yellow]${estimate.total_cost_usd:.2f}[/bold yellow] "
             f"[dim]({estimate.total_api_calls} API calls, {model_name})[/dim]"
         )
+
+    def display_ask_estimate(
+        self,
+        estimate: CostEstimate,
+        num_agents: int,
+        include_market_data: bool = True,
+    ) -> None:
+        """Display cost estimate for Q&A operation."""
+        model_name = CostEstimator.get_model_name(estimate.model)
+
+        # Build content
+        data_status = "with market data" if include_market_data else "without market data"
+        agents_text = f"{num_agents} investor{'s' if num_agents > 1 else ''}"
+
+        content = Group(
+            Text(f"Model: {model_name}", style="bold"),
+            Text(f"Querying: {agents_text} ({data_status})", style="dim"),
+            Text(""),
+            Text(f"API Calls: {estimate.total_api_calls}"),
+            Text(f"Est. Tokens: ~{estimate.total_input_tokens:,} in / ~{estimate.total_output_tokens:,} out"),
+            Text(""),
+            Text(f"Estimated Cost: ${estimate.total_cost_usd:.2f} USD", style="bold yellow"),
+        )
+
+        self.console.print()
+        self.console.print(Panel(content, title="Q&A Cost Estimation", border_style="blue"))

@@ -3,7 +3,7 @@
 from consilium.db.connection import DatabasePool
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 MIGRATIONS = {
     1: """
@@ -318,6 +318,59 @@ FROM portfolio_positions;
 -- Record version 4
 INSERT INTO schema_versions (version, description) VALUES (4, 'Transaction tracking (BUY/SELL)');
 """,
+    5: """
+-- Migration v5: Ask Investor Q&A
+-- Adds tables for Q&A history with investor agents
+
+-- Q&A questions table
+CREATE TABLE IF NOT EXISTS ask_questions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    question TEXT NOT NULL,
+    tickers JSON,
+    agents JSON NOT NULL,
+    include_market_data BOOLEAN DEFAULT TRUE,
+
+    -- Token/cost tracking
+    input_tokens INT DEFAULT 0,
+    output_tokens INT DEFAULT 0,
+    cost_usd DECIMAL(10, 4) DEFAULT 0,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    INDEX idx_created (created_at),
+    FULLTEXT idx_question (question)
+);
+
+-- Q&A responses table (one per agent per question)
+CREATE TABLE IF NOT EXISTS ask_responses (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    question_id BIGINT NOT NULL,
+    agent_id VARCHAR(50) NOT NULL,
+    agent_name VARCHAR(100) NOT NULL,
+
+    -- Structured response
+    signal VARCHAR(20) NOT NULL,
+    confidence VARCHAR(20) NOT NULL,
+    reasoning TEXT NOT NULL,
+    key_factors JSON,
+    risks JSON,
+    time_horizon VARCHAR(50),
+    target_price DECIMAL(15, 4),
+
+    -- Token tracking
+    input_tokens INT DEFAULT 0,
+    output_tokens INT DEFAULT 0,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (question_id) REFERENCES ask_questions(id) ON DELETE CASCADE,
+    INDEX idx_question_agent (question_id, agent_id),
+    INDEX idx_agent (agent_id)
+);
+
+-- Record version 5
+INSERT INTO schema_versions (version, description) VALUES (5, 'Ask Investor Q&A');
+""",
 }
 
 
@@ -370,6 +423,8 @@ async def run_migrations(pool: DatabasePool) -> list[int]:
 async def reset_database(pool: DatabasePool) -> None:
     """Drop all tables and recreate schema. USE WITH CAUTION."""
     tables = [
+        "ask_responses",
+        "ask_questions",
         "portfolio_snapshots",
         "portfolio_transactions",
         "portfolio_analysis",

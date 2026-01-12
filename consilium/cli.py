@@ -27,6 +27,7 @@ universe_app = typer.Typer(help="Stock universe management commands")
 portfolio_app = typer.Typer(help="Portfolio management commands")
 history_app = typer.Typer(help="Analysis history commands")
 db_app = typer.Typer(help="Database management commands")
+ask_app = typer.Typer(help="Ask investor agents questions directly")
 
 app.add_typer(agents_app, name="agents")
 app.add_typer(watchlist_app, name="watchlist")
@@ -34,6 +35,7 @@ app.add_typer(universe_app, name="universe")
 app.add_typer(portfolio_app, name="portfolio")
 app.add_typer(history_app, name="history")
 app.add_typer(db_app, name="db")
+app.add_typer(ask_app, name="ask")
 
 
 def version_callback(value: bool) -> None:
@@ -3127,6 +3129,241 @@ def status() -> None:
     )
 
     console.print(table)
+
+
+# ============================================================================
+# ASK COMMANDS - Q&A with investor agents
+# ============================================================================
+
+
+@ask_app.callback(invoke_without_command=True)
+def ask_question(
+    ctx: typer.Context,
+    question: Optional[str] = typer.Argument(
+        None,
+        help="Your question for the investor(s)",
+    ),
+    agent: Optional[str] = typer.Option(
+        None,
+        "--agent",
+        "-a",
+        help="Single agent ID (e.g., 'buffett')",
+    ),
+    agents: Optional[str] = typer.Option(
+        None,
+        "--agents",
+        help="Multiple agent IDs, comma-separated (e.g., 'buffett,munger,graham')",
+    ),
+    ticker: Optional[str] = typer.Option(
+        None,
+        "--ticker",
+        "-t",
+        help="Explicit ticker(s) to fetch data for (comma-separated)",
+    ),
+    no_data: bool = typer.Option(
+        False,
+        "--no-data",
+        help="Skip fetching market data (for philosophical questions)",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip cost confirmation",
+    ),
+) -> None:
+    """
+    Ask investor agents a direct question.
+
+    Examples:
+        consilium ask "O que você acha de TSLA?" --agent buffett
+        consilium ask "Vale investir em AAPL?" --agents buffett,munger,graham
+        consilium ask "Qual sua visão para NVDA em 2 anos?" --agent lynch
+        consilium ask "Devo comprar IBIT e shortar MSTR?" --agents buffett,simons
+        consilium ask "O que você pensa sobre IA?" --agent buffett --no-data
+    """
+    # Skip if a subcommand was invoked
+    if ctx.invoked_subcommand is not None:
+        return
+
+    if not question:
+        console.print("[yellow]Usage:[/yellow] consilium ask \"Your question\" --agent <agent_id>")
+        console.print("\nExamples:")
+        console.print('  consilium ask "O que você acha de TSLA?" --agent buffett')
+        console.print('  consilium ask "Vale investir em AAPL?" --agents buffett,munger')
+        console.print("\nUse [cyan]consilium ask --help[/cyan] for more options.")
+        raise typer.Exit(0)
+
+    settings = get_settings()
+
+    if not settings.is_configured:
+        console.print("[red]Error:[/red] ANTHROPIC_API_KEY not configured.")
+        console.print("Set it in your environment or .env file.")
+        raise typer.Exit(1)
+
+    # Parse agents
+    agent_ids: list[str] = []
+    if agent:
+        agent_ids = [agent.strip().lower()]
+    elif agents:
+        agent_ids = [a.strip().lower() for a in agents.split(",")]
+    else:
+        console.print("[red]Error:[/red] Please specify --agent or --agents")
+        console.print("Example: consilium ask \"Your question\" --agent buffett")
+        raise typer.Exit(1)
+
+    # Parse explicit tickers
+    explicit_tickers: list[str] | None = None
+    if ticker:
+        explicit_tickers = [t.strip().upper() for t in ticker.split(",")]
+
+    include_market_data = not no_data
+
+    # Cost estimation and confirmation
+    if not yes:
+        from consilium.llm.cost_estimator import CostEstimator
+        from consilium.output.cost_display import CostDisplay
+
+        estimator = CostEstimator(settings.model)
+        estimate = estimator.estimate_ask(
+            num_agents=len(agent_ids),
+            include_market_data=include_market_data,
+        )
+
+        cost_display = CostDisplay(console)
+        cost_display.display_ask_estimate(
+            estimate,
+            num_agents=len(agent_ids),
+            include_market_data=include_market_data,
+        )
+
+        if not typer.confirm("\nProceed with question?"):
+            console.print("[yellow]Question cancelled.[/yellow]")
+            raise typer.Exit(0)
+
+    # Run the question
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Preparing question...", total=None)
+
+        async def run_ask():
+            from consilium.db.connection import close_pool
+            from consilium.ask.orchestrator import AskOrchestrator
+
+            try:
+                orchestrator = AskOrchestrator(
+                    settings=settings,
+                    progress_callback=lambda msg: progress.update(task, description=msg),
+                )
+                return await orchestrator.ask(
+                    question=question,
+                    agent_ids=agent_ids,
+                    explicit_tickers=explicit_tickers,
+                    include_market_data=include_market_data,
+                )
+            finally:
+                await close_pool()
+
+        try:
+            result = asyncio.run(run_ask())
+        except Exception as e:
+            console.print(f"\n[red]Error:[/red] {e}")
+            raise typer.Exit(1)
+
+    # Display result
+    from consilium.output.ask_formatter import AskFormatter
+
+    console.print()
+    formatter = AskFormatter(console)
+    if len(result.responses) == 1:
+        formatter.display_single_response(result)
+    else:
+        formatter.display_comparison(result)
+
+
+@ask_app.command("history")
+def ask_history(
+    agent: Optional[str] = typer.Option(
+        None,
+        "--agent",
+        "-a",
+        help="Filter by agent ID",
+    ),
+    limit: int = typer.Option(
+        20,
+        "--limit",
+        "-n",
+        help="Number of records to show",
+    ),
+) -> None:
+    """View history of previous questions."""
+    settings = get_settings()
+
+    async def fetch_history():
+        from consilium.db.connection import close_pool
+        from consilium.db.ask_repository import AskRepository
+
+        try:
+            repo = AskRepository(settings)
+            return await repo.list_questions(
+                agent_id=agent,
+                limit=limit,
+            )
+        finally:
+            await close_pool()
+
+    try:
+        questions = asyncio.run(fetch_history())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    from consilium.output.ask_formatter import AskFormatter
+
+    formatter = AskFormatter(console)
+    title = f"Q&A History (agent: {agent})" if agent else "Q&A History"
+    formatter.display_history(questions, title=title)
+
+
+@ask_app.command("show")
+def ask_show(
+    question_id: int = typer.Argument(
+        ...,
+        help="Question ID to show",
+    ),
+) -> None:
+    """Show details of a specific question and its responses."""
+    settings = get_settings()
+
+    async def fetch_question():
+        from consilium.db.connection import close_pool
+        from consilium.db.ask_repository import AskRepository
+
+        try:
+            repo = AskRepository(settings)
+            return await repo.get_question(question_id)
+        finally:
+            await close_pool()
+
+    try:
+        result = asyncio.run(fetch_question())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not result:
+        console.print(f"[yellow]Question {question_id} not found.[/yellow]")
+        raise typer.Exit(1)
+
+    from consilium.output.ask_formatter import AskFormatter
+
+    formatter = AskFormatter(console)
+    formatter.display_question_detail(result)
 
 
 if __name__ == "__main__":

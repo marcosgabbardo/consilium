@@ -69,6 +69,14 @@ class CostEstimator:
             "input": 1300,  # system prompt + user prompt (no specialist reports)
             "output": 700,  # response
         },
+        "ask_with_data": {
+            "input": 2000,  # system prompt + Q&A prompt + market data
+            "output": 600,  # structured response
+        },
+        "ask_no_data": {
+            "input": 1500,  # system prompt + Q&A prompt (no market data)
+            "output": 600,  # structured response
+        },
     }
 
     # Default agent counts
@@ -165,6 +173,50 @@ class CostEstimator:
         input_cost = (Decimal(input_tokens) / Decimal("1000000")) * self.pricing.input_per_mtok
         output_cost = (Decimal(output_tokens) / Decimal("1000000")) * self.pricing.output_per_mtok
         return input_cost + output_cost
+
+    def estimate_ask(
+        self,
+        num_agents: int,
+        include_market_data: bool = True,
+    ) -> CostEstimate:
+        """
+        Estimate cost for Q&A with investor agents.
+
+        Args:
+            num_agents: Number of investor agents to query
+            include_market_data: Whether market data will be included
+
+        Returns:
+            CostEstimate with breakdown
+        """
+        # Choose token estimate based on market data inclusion
+        token_key = "ask_with_data" if include_market_data else "ask_no_data"
+        input_per_call = self.TOKEN_ESTIMATES[token_key]["input"]
+        output_per_call = self.TOKEN_ESTIMATES[token_key]["output"]
+
+        total_input = num_agents * input_per_call
+        total_output = num_agents * output_per_call
+        total_cost = self._calculate_cost(total_input, total_output)
+
+        breakdowns = [
+            CostBreakdown(
+                component="Q&A Responses",
+                api_calls=num_agents,
+                input_tokens=total_input,
+                output_tokens=total_output,
+                cost_usd=total_cost,
+            )
+        ]
+
+        return CostEstimate(
+            model=self.model,
+            tickers=[],
+            breakdowns=breakdowns,
+            total_api_calls=num_agents,
+            total_input_tokens=total_input,
+            total_output_tokens=total_output,
+            total_cost_usd=total_cost,
+        )
 
     @classmethod
     def get_model_name(cls, model_id: str) -> str:
