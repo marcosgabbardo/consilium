@@ -58,7 +58,7 @@ The name comes from Latin *consilium* ("council" or "deliberation"), reflecting 
 - **13 Investor Personalities** — Each with distinct investment philosophies, from value investing to growth, momentum, macro, and **quantitative** strategies
 - **7 Specialist Agents** — Quantitative analysis covering valuation, fundamentals, technicals, sentiment, risk, portfolio fit, and **political risk**
 - **Weighted Consensus Algorithm** — Agents vote with configurable weights and confidence levels
-- **Portfolio Management** — Import positions from CSV, track P&L, get per-position recommendations
+- **Portfolio Management** — Import positions from CSV, track BUY/SELL transactions, realized & unrealized P&L, per-position recommendations
 - **Cost Estimation** — Shows estimated API costs before execution with user confirmation
 - **Stock Universe Management** — Pre-built universes (S&P 500, NASDAQ 100, Dow 30, MAG7, Brazilian) for batch analysis
 - **Watchlist Management** — Create, manage, and batch-analyze stock watchlists
@@ -538,6 +538,39 @@ consilium portfolio delete "Tech Holdings"
 consilium portfolio delete "Tech Holdings" --force
 ```
 
+#### Transaction Tracking (BUY/SELL)
+
+Track both purchases and sales with realized P&L calculation using weighted average cost basis:
+
+```bash
+# Sell shares (records SELL transaction with P&L calculation)
+consilium portfolio sell "Tech Holdings" AAPL 50 180.00
+consilium portfolio sell "Tech Holdings" NVDA 25 520.00 --date 2024-06-15
+consilium portfolio sell "Tech Holdings" MSFT 10 400.00 --fees 9.99 -n "Taking profits"
+
+# View transaction history (buys and sells)
+consilium portfolio transactions "Tech Holdings"
+consilium portfolio transactions "Tech Holdings" --ticker AAPL
+consilium portfolio transactions "Tech Holdings" --type sell
+consilium portfolio transactions "Tech Holdings" --limit 100
+
+# View realized P&L summary (from closed positions)
+consilium portfolio pnl "Tech Holdings"
+consilium portfolio pnl "Tech Holdings" --ticker AAPL
+```
+
+**Transaction History Output:**
+```
+                           Transaction History
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃ Date       ┃ Ticker ┃ Type ┃  Qty   ┃  Price  ┃    Total   ┃ Realized P&L ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ 2024-01-15 │ AAPL   │ BUY  │    100 │ $150.00 │ $15,000.00 │          -   │
+│ 2024-03-01 │ AAPL   │ BUY  │     50 │ $160.00 │  $8,000.00 │          -   │
+│ 2024-06-15 │ AAPL   │ SELL │     75 │ $180.00 │ $13,500.00 │   +$2,250.00 │
+└────────────┴────────┴──────┴────────┴─────────┴────────────┴──────────────┘
+```
+
 **CSV Import Features:**
 
 The importer automatically detects column names from common brokerage export formats:
@@ -548,7 +581,13 @@ The importer automatically detects column names from common brokerage export for
 | Quantity | quantity, qty, shares, units, amount, position |
 | Price | purchase_price, price, cost, avg_cost, buy_price |
 | Date | purchase_date, date, buy_date, trade_date |
+| Type | type, transaction_type, action, side, buy_sell |
+| Fees | fees, fee, commission, brokerage, charges |
 | Notes | notes, note, comment, description, memo |
+
+**Transaction Type Values:**
+- BUY: `buy`, `b`, `compra`, `long`, `+`, `bought`, `purchase`
+- SELL: `sell`, `s`, `venda`, `short`, `-`, `sold`, `sale`
 
 **Supported Date Formats:**
 - `YYYY-MM-DD`, `YYYY/MM/DD`

@@ -13,8 +13,11 @@ from consilium.core.enums import SignalType, ConfidenceLevel
 from consilium.core.portfolio_models import (
     Portfolio,
     PortfolioPosition,
+    PortfolioTransaction,
+    TransactionType,
     PortfolioSummary,
     PortfolioAnalysisResult,
+    PortfolioPerformance,
     PositionWithAnalysis,
     PositionAction,
     SectorAllocation,
@@ -442,3 +445,313 @@ class PortfolioFormatter:
             )
 
         self.console.print(table)
+
+    # ========== Transactions ==========
+
+    def display_transactions(
+        self,
+        transactions: list[PortfolioTransaction],
+        ticker_filter: str | None = None,
+        type_filter: TransactionType | None = None,
+    ) -> None:
+        """Display transaction history table."""
+        if not transactions:
+            self.console.print("[yellow]No transactions found.[/yellow]")
+            return
+
+        # Apply filters
+        filtered = transactions
+        if ticker_filter:
+            filtered = [t for t in filtered if t.ticker == ticker_filter.upper()]
+        if type_filter:
+            filtered = [t for t in filtered if t.transaction_type == type_filter]
+
+        if not filtered:
+            self.console.print("[yellow]No transactions match the filters.[/yellow]")
+            return
+
+        title = "Transaction History"
+        if ticker_filter:
+            title += f" - {ticker_filter.upper()}"
+
+        table = Table(title=title)
+        table.add_column("Date", style="dim", width=10)
+        table.add_column("Ticker", style="cyan bold", width=8)
+        table.add_column("Type", justify="center", width=6)
+        table.add_column("Qty", justify="right", width=10)
+        table.add_column("Price", justify="right", width=10)
+        table.add_column("Total", justify="right", width=12)
+        table.add_column("Fees", justify="right", width=8)
+        table.add_column("Realized P&L", justify="right", width=14)
+
+        for t in filtered:
+            # Transaction type color
+            type_color = "green" if t.transaction_type == TransactionType.BUY else "red"
+            type_label = f"[{type_color}]{t.transaction_type.value}[/{type_color}]"
+
+            # Total value
+            total = t.quantity * t.price
+            total_str = f"${total:,.2f}"
+
+            # Fees
+            fees_str = f"${t.fees:.2f}" if t.fees > 0 else "[dim]-[/dim]"
+
+            # Realized P&L (only for SELL)
+            if t.transaction_type == TransactionType.SELL and t.realized_pnl is not None:
+                pnl_color = "green" if t.realized_pnl >= 0 else "red"
+                pnl_sign = "+" if t.realized_pnl >= 0 else ""
+                pnl_str = f"[{pnl_color}]{pnl_sign}${t.realized_pnl:,.2f}[/{pnl_color}]"
+            else:
+                pnl_str = "[dim]-[/dim]"
+
+            table.add_row(
+                t.transaction_date.strftime("%Y-%m-%d"),
+                t.ticker,
+                type_label,
+                f"{t.quantity:,.4f}".rstrip("0").rstrip("."),
+                f"${t.price:.2f}",
+                total_str,
+                fees_str,
+                pnl_str,
+            )
+
+        self.console.print(table)
+
+        # Summary
+        buy_count = sum(1 for t in filtered if t.transaction_type == TransactionType.BUY)
+        sell_count = sum(1 for t in filtered if t.transaction_type == TransactionType.SELL)
+        total_realized = sum(
+            t.realized_pnl or Decimal("0")
+            for t in filtered
+            if t.transaction_type == TransactionType.SELL
+        )
+
+        self.console.print(
+            f"\n[dim]Transactions: {len(filtered)} ({buy_count} buys, {sell_count} sells)"
+            f" | Total Realized P&L: "
+            f"{'[green]+' if total_realized >= 0 else '[red]'}"
+            f"${total_realized:,.2f}[/][/dim]"
+        )
+
+    # ========== Performance ==========
+
+    def display_performance(self, performance: PortfolioPerformance) -> None:
+        """Display portfolio performance metrics including realized P&L."""
+        # Colors for P&L
+        unrealized_color = "green" if performance.total_unrealized_pnl >= 0 else "red"
+        unrealized_sign = "+" if performance.total_unrealized_pnl >= 0 else ""
+        realized_color = "green" if performance.total_realized_pnl >= 0 else "red"
+        realized_sign = "+" if performance.total_realized_pnl >= 0 else ""
+        total_color = "green" if performance.total_pnl >= 0 else "red"
+        total_sign = "+" if performance.total_pnl >= 0 else ""
+
+        # Calculate total return percentage
+        if performance.total_cost_basis > 0:
+            total_return_pct = (performance.total_pnl / performance.total_cost_basis) * 100
+        else:
+            total_return_pct = Decimal("0")
+
+        # Build content
+        content_lines = [
+            f"[bold]{performance.portfolio.name}[/bold]",
+            "",
+            f"[bold]Current Value:[/bold] ${performance.total_value:,.2f}",
+            f"[bold]Cost Basis:[/bold] ${performance.total_cost_basis:,.2f}",
+            "",
+            f"[bold]Unrealized P&L:[/bold] [{unrealized_color}]{unrealized_sign}${performance.total_unrealized_pnl:,.2f}[/{unrealized_color}]",
+            f"[bold]Realized P&L:[/bold] [{realized_color}]{realized_sign}${performance.total_realized_pnl:,.2f}[/{realized_color}]",
+            f"[bold]Total P&L:[/bold] [{total_color}]{total_sign}${performance.total_pnl:,.2f} ({total_sign}{total_return_pct:.2f}%)[/{total_color}]",
+            "",
+        ]
+
+        # Trade statistics
+        if performance.winning_trades > 0 or performance.losing_trades > 0:
+            total_trades = performance.winning_trades + performance.losing_trades
+            win_rate = (performance.winning_trades / total_trades * 100) if total_trades > 0 else 0
+            content_lines.extend([
+                "[bold]Trade Statistics:[/bold]",
+                f"  Winning Trades: [green]{performance.winning_trades}[/green]",
+                f"  Losing Trades: [red]{performance.losing_trades}[/red]",
+                f"  Win Rate: {win_rate:.1f}%",
+            ])
+
+        # Holding period
+        if performance.avg_holding_period_days is not None:
+            content_lines.append(f"  Avg Holding Period: {performance.avg_holding_period_days} days")
+
+        self.console.print(
+            Panel(
+                "\n".join(content_lines),
+                title="Portfolio Performance",
+                border_style="blue",
+            )
+        )
+
+    # ========== P&L Summary ==========
+
+    def display_pnl_summary(
+        self,
+        portfolio: Portfolio,
+        pnl_by_ticker: dict[str, dict],
+        total_realized: Decimal,
+        total_fees: Decimal,
+    ) -> None:
+        """Display realized P&L summary by ticker."""
+        # Header
+        total_color = "green" if total_realized >= 0 else "red"
+        total_sign = "+" if total_realized >= 0 else ""
+
+        self.console.print(
+            Panel(
+                f"[bold]{portfolio.name}[/bold]\n\n"
+                f"Total Realized P&L: [{total_color}]{total_sign}${total_realized:,.2f}[/{total_color}]\n"
+                f"Total Fees Paid: [dim]${total_fees:,.2f}[/dim]",
+                title="Realized P&L Summary",
+                border_style="blue",
+            )
+        )
+
+        if not pnl_by_ticker:
+            self.console.print("[yellow]No realized gains/losses yet.[/yellow]")
+            return
+
+        # P&L by ticker table
+        table = Table(title="P&L by Ticker")
+        table.add_column("Ticker", style="cyan bold")
+        table.add_column("Sells", justify="right")
+        table.add_column("Avg Cost", justify="right")
+        table.add_column("Avg Sell", justify="right")
+        table.add_column("Realized P&L", justify="right")
+        table.add_column("Holding Days", justify="right")
+
+        for ticker, data in sorted(pnl_by_ticker.items()):
+            pnl = data.get("realized_pnl", Decimal("0"))
+            pnl_color = "green" if pnl >= 0 else "red"
+            pnl_sign = "+" if pnl >= 0 else ""
+
+            table.add_row(
+                ticker,
+                str(data.get("sell_count", 0)),
+                f"${data.get('avg_cost_basis', 0):.2f}",
+                f"${data.get('avg_sell_price', 0):.2f}",
+                f"[{pnl_color}]{pnl_sign}${pnl:,.2f}[/{pnl_color}]",
+                str(data.get("avg_holding_days", "-")),
+            )
+
+        self.console.print(table)
+
+    # ========== Updated Import Preview (with transactions) ==========
+
+    def display_transaction_import_preview(
+        self,
+        mapping: dict,
+        rows: list[dict],
+    ) -> None:
+        """Display CSV import preview for transactions."""
+        self.console.print("\n[bold]Column Mapping Detected:[/bold]")
+        self.console.print(f"  Ticker: {mapping.get('ticker', 'N/A')}")
+        self.console.print(f"  Quantity: {mapping.get('quantity', 'N/A')}")
+        self.console.print(f"  Price: {mapping.get('purchase_price', 'N/A')}")
+        self.console.print(f"  Date: {mapping.get('purchase_date', 'N/A')}")
+        if mapping.get('transaction_type'):
+            self.console.print(f"  Type: {mapping['transaction_type']}")
+        if mapping.get('fees'):
+            self.console.print(f"  Fees: {mapping['fees']}")
+        if mapping.get('notes'):
+            self.console.print(f"  Notes: {mapping['notes']}")
+
+        self.console.print("\n[bold]Preview (first 5 rows):[/bold]")
+
+        table = Table()
+        table.add_column("Ticker", style="cyan")
+        table.add_column("Type", justify="center")
+        table.add_column("Quantity", justify="right")
+        table.add_column("Price", justify="right")
+        table.add_column("Date", justify="center")
+        if any(row.get("fees") for row in rows):
+            table.add_column("Fees", justify="right")
+
+        for row in rows:
+            # Transaction type with color
+            tx_type = row.get("transaction_type", "BUY")
+            if hasattr(tx_type, "value"):
+                tx_type = tx_type.value
+            type_color = "green" if tx_type == "BUY" else "red"
+
+            row_data = [
+                row.get("ticker", "-"),
+                f"[{type_color}]{tx_type}[/{type_color}]",
+                f"{row.get('quantity', 0):,.4f}".rstrip("0").rstrip("."),
+                f"${row.get('price', 0):.2f}",
+                str(row.get("date", "-")),
+            ]
+
+            if any(r.get("fees") for r in rows):
+                fees = row.get("fees", Decimal("0"))
+                row_data.append(f"${fees:.2f}" if fees > 0 else "-")
+
+            table.add_row(*row_data)
+
+        self.console.print(table)
+
+    def display_transaction_import_result(self, result: CSVImportResult) -> None:
+        """Display transaction import result."""
+        success_color = "green" if result.records_failed == 0 else "yellow"
+
+        # Count buys and sells if available
+        buy_count = 0
+        sell_count = 0
+        if result.transactions_created:
+            buy_count = sum(
+                1 for t in result.transactions_created
+                if t.transaction_type == TransactionType.BUY
+            )
+            sell_count = sum(
+                1 for t in result.transactions_created
+                if t.transaction_type == TransactionType.SELL
+            )
+
+        content = (
+            f"[bold]Import Complete[/bold]\n\n"
+            f"File: {result.file_name}\n"
+            f"Total Records: {result.records_total}\n"
+            f"Successful: [{success_color}]{result.records_success}[/{success_color}]"
+        )
+
+        if buy_count or sell_count:
+            content += f" ([green]{buy_count} buys[/green], [red]{sell_count} sells[/red])"
+
+        content += (
+            f"\nFailed: {'[red]' + str(result.records_failed) + '[/red]' if result.records_failed else '0'}\n"
+            f"Success Rate: {result.success_rate:.1f}%"
+        )
+
+        self.console.print(
+            Panel(
+                content,
+                title="Transaction Import Result",
+                border_style="green" if result.records_failed == 0 else "yellow",
+            )
+        )
+
+        # Show errors if any
+        if result.errors:
+            self.console.print("\n[red]Import Errors:[/red]")
+            table = Table()
+            table.add_column("Row", style="dim", width=6)
+            table.add_column("Field", style="yellow")
+            table.add_column("Value", style="dim")
+            table.add_column("Error", style="red")
+
+            for err in result.errors[:10]:
+                table.add_row(
+                    str(err.row_number),
+                    err.field,
+                    err.value[:20] + "..." if len(err.value) > 20 else err.value,
+                    err.error,
+                )
+
+            self.console.print(table)
+
+            if len(result.errors) > 10:
+                self.console.print(f"[dim]...and {len(result.errors) - 10} more errors[/dim]")

@@ -2395,6 +2395,301 @@ def portfolio_analysis_history(
     formatter.display_analysis_history(history)
 
 
+@portfolio_app.command("sell")
+def portfolio_sell(
+    name: str = typer.Argument(..., help="Portfolio name"),
+    ticker: str = typer.Argument(..., help="Ticker symbol"),
+    quantity: float = typer.Argument(..., help="Number of shares to sell"),
+    price: float = typer.Argument(..., help="Sell price per share"),
+    date: Optional[str] = typer.Option(
+        None,
+        "--date",
+        "-d",
+        help="Sell date (YYYY-MM-DD), defaults to today",
+    ),
+    fees: float = typer.Option(
+        0.0,
+        "--fees",
+        "-f",
+        help="Transaction fees",
+    ),
+    notes: Optional[str] = typer.Option(
+        None,
+        "--notes",
+        "-n",
+        help="Notes for this sale",
+    ),
+) -> None:
+    """
+    Sell (reduce) a position in a portfolio.
+
+    Records a SELL transaction with realized P&L calculation using
+    weighted average cost basis.
+
+    Examples:
+        consilium portfolio sell "Tech Holdings" AAPL 50 180.00
+        consilium portfolio sell "Tech Holdings" NVDA 25 520.00 --date 2024-06-15
+        consilium portfolio sell "Tech Holdings" MSFT 10 400.00 --fees 9.99 -n "Taking profits"
+    """
+    from datetime import date as dt_date
+    from decimal import Decimal
+
+    # Parse date
+    if date:
+        try:
+            from datetime import datetime
+            sell_date = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            console.print(f"[red]Error:[/red] Invalid date format. Use YYYY-MM-DD.")
+            raise typer.Exit(1)
+    else:
+        sell_date = dt_date.today()
+
+    async def record_sale():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+        from consilium.core.portfolio_models import TransactionType
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+
+            # Check if portfolio exists
+            portfolio = await repo.get_portfolio_by_name(name)
+            if not portfolio:
+                console.print(f"[red]Error:[/red] Portfolio '{name}' not found.")
+                return None
+
+            # Check if we have enough shares to sell
+            positions = await repo.get_positions(portfolio.id)
+            ticker_upper = ticker.upper()
+            position = next((p for p in positions if p.ticker == ticker_upper), None)
+
+            if not position:
+                console.print(f"[red]Error:[/red] No position in {ticker_upper} found.")
+                return None
+
+            if position.quantity < Decimal(str(quantity)):
+                console.print(
+                    f"[red]Error:[/red] Cannot sell {quantity} shares. "
+                    f"Only {position.quantity} shares available."
+                )
+                return None
+
+            # Calculate realized P&L
+            realized_pnl, holding_days, cost_basis = await repo.calculate_realized_pnl_for_sell(
+                portfolio_id=portfolio.id,
+                ticker=ticker_upper,
+                sell_quantity=Decimal(str(quantity)),
+                sell_price=Decimal(str(price)),
+                sell_date=sell_date,
+            )
+
+            # Record the sell transaction
+            transaction_id = await repo.add_transaction(
+                portfolio_id=portfolio.id,
+                ticker=ticker_upper,
+                transaction_type=TransactionType.SELL,
+                quantity=Decimal(str(quantity)),
+                price=Decimal(str(price)),
+                transaction_date=sell_date,
+                fees=Decimal(str(fees)),
+                notes=notes,
+                realized_pnl=realized_pnl,
+                holding_period_days=holding_days,
+                cost_basis_used=cost_basis,
+            )
+
+            # Update the position (reduce quantity)
+            new_quantity = position.quantity - Decimal(str(quantity))
+            if new_quantity <= 0:
+                # Remove position entirely
+                await repo.delete_position(position.id)
+            else:
+                # Update position quantity
+                await repo.update_position_quantity(position.id, new_quantity)
+
+            return {
+                "portfolio": portfolio,
+                "transaction_id": transaction_id,
+                "realized_pnl": realized_pnl,
+                "holding_days": holding_days,
+                "cost_basis": cost_basis,
+                "remaining_shares": new_quantity if new_quantity > 0 else Decimal("0"),
+            }
+        finally:
+            await close_pool()
+
+    try:
+        result = asyncio.run(record_sale())
+    except Exception as e:
+        console.print(f"[red]Error recording sale:[/red] {e}")
+        raise typer.Exit(1)
+
+    if result:
+        total_proceeds = quantity * price
+        pnl = result["realized_pnl"]
+        pnl_color = "green" if pnl >= 0 else "red"
+        pnl_sign = "+" if pnl >= 0 else ""
+
+        console.print(
+            f"[red]SOLD from '{name}':[/red] {quantity} {ticker.upper()} @ ${price:.2f} = ${total_proceeds:,.2f}"
+        )
+        console.print(f"[dim]Sale date: {sell_date}[/dim]")
+        console.print(f"[dim]Cost basis used: ${result['cost_basis']:.2f}[/dim]")
+        console.print(
+            f"[{pnl_color}]Realized P&L: {pnl_sign}${pnl:,.2f}[/{pnl_color}] "
+            f"(held {result['holding_days']} days)"
+        )
+        if result["remaining_shares"] > 0:
+            console.print(f"[dim]Remaining position: {result['remaining_shares']} shares[/dim]")
+        else:
+            console.print(f"[dim]Position fully closed[/dim]")
+
+
+@portfolio_app.command("transactions")
+def portfolio_transactions(
+    name: str = typer.Argument(..., help="Portfolio name"),
+    ticker: Optional[str] = typer.Option(
+        None,
+        "--ticker",
+        "-t",
+        help="Filter by ticker symbol",
+    ),
+    tx_type: Optional[str] = typer.Option(
+        None,
+        "--type",
+        help="Filter by transaction type (BUY or SELL)",
+    ),
+    limit: int = typer.Option(50, "--limit", "-l", help="Number of transactions to show"),
+) -> None:
+    """
+    Show transaction history for a portfolio.
+
+    Examples:
+        consilium portfolio transactions "Tech Holdings"
+        consilium portfolio transactions "Tech Holdings" --ticker AAPL
+        consilium portfolio transactions "Tech Holdings" --type sell
+        consilium portfolio transactions "Tech Holdings" --limit 100
+    """
+    from consilium.core.portfolio_models import TransactionType
+
+    # Parse transaction type filter
+    type_filter = None
+    if tx_type:
+        tx_type_upper = tx_type.upper()
+        if tx_type_upper == "BUY":
+            type_filter = TransactionType.BUY
+        elif tx_type_upper == "SELL":
+            type_filter = TransactionType.SELL
+        else:
+            console.print(f"[red]Error:[/red] Invalid type. Use BUY or SELL.")
+            raise typer.Exit(1)
+
+    async def fetch_transactions():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+
+            portfolio = await repo.get_portfolio_by_name(name)
+            if not portfolio:
+                return None, []
+
+            transactions = await repo.get_transactions(
+                portfolio_id=portfolio.id,
+                ticker=ticker.upper() if ticker else None,
+                limit=limit,
+            )
+            return portfolio, transactions
+        finally:
+            await close_pool()
+
+    try:
+        portfolio, transactions = asyncio.run(fetch_transactions())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not portfolio:
+        console.print(f"[red]Portfolio '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    from consilium.output.portfolio_formatter import PortfolioFormatter
+    formatter = PortfolioFormatter(console)
+    formatter.display_transactions(transactions, ticker_filter=ticker, type_filter=type_filter)
+
+
+@portfolio_app.command("pnl")
+def portfolio_pnl(
+    name: str = typer.Argument(..., help="Portfolio name"),
+    ticker: Optional[str] = typer.Option(
+        None,
+        "--ticker",
+        "-t",
+        help="Filter by ticker symbol",
+    ),
+) -> None:
+    """
+    Show realized P&L summary for a portfolio.
+
+    Displays realized gains/losses from closed positions, broken down by ticker.
+
+    Examples:
+        consilium portfolio pnl "Tech Holdings"
+        consilium portfolio pnl "Tech Holdings" --ticker AAPL
+    """
+    from decimal import Decimal
+
+    async def fetch_pnl():
+        from consilium.db.connection import get_pool, close_pool
+        from consilium.db.portfolio_repository import PortfolioRepository
+
+        try:
+            pool = await get_pool()
+            repo = PortfolioRepository(pool)
+
+            portfolio = await repo.get_portfolio_by_name(name)
+            if not portfolio:
+                return None, {}, Decimal("0"), Decimal("0")
+
+            # Get P&L by ticker
+            pnl_by_ticker = await repo.get_realized_pnl_by_ticker(
+                portfolio_id=portfolio.id,
+                ticker=ticker.upper() if ticker else None,
+            )
+
+            # Calculate totals
+            total_realized = sum(
+                data.get("realized_pnl", Decimal("0"))
+                for data in pnl_by_ticker.values()
+            )
+            total_fees = sum(
+                data.get("total_fees", Decimal("0"))
+                for data in pnl_by_ticker.values()
+            )
+
+            return portfolio, pnl_by_ticker, total_realized, total_fees
+        finally:
+            await close_pool()
+
+    try:
+        portfolio, pnl_by_ticker, total_realized, total_fees = asyncio.run(fetch_pnl())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not portfolio:
+        console.print(f"[red]Portfolio '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    from consilium.output.portfolio_formatter import PortfolioFormatter
+    formatter = PortfolioFormatter(console)
+    formatter.display_pnl_summary(portfolio, pnl_by_ticker, total_realized, total_fees)
+
+
 # ============== History Commands ==============
 
 

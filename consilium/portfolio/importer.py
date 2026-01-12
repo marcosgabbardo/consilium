@@ -9,6 +9,8 @@ from typing import Any
 
 from consilium.core.portfolio_models import (
     PortfolioPosition,
+    PortfolioTransaction,
+    TransactionType,
     CSVColumnMapping,
     CSVImportResult,
     CSVImportError,
@@ -40,6 +42,18 @@ class CSVImporter:
         "notes", "note", "comment", "comments", "description", "memo",
         "remarks", "info",
     }
+    TRANSACTION_TYPE_ALIASES = {
+        "type", "transaction_type", "action", "side", "transaction",
+        "operation", "buy_sell", "direction", "order_type", "trade_type",
+    }
+    FEES_ALIASES = {
+        "fees", "fee", "commission", "commissions", "brokerage", "cost",
+        "charges", "trading_fee", "transaction_fee",
+    }
+
+    # Transaction type value mappings
+    BUY_VALUES = {"buy", "b", "compra", "long", "+", "bought", "purchase"}
+    SELL_VALUES = {"sell", "s", "venda", "short", "-", "sold", "sale"}
 
     # Supported date formats
     DATE_FORMATS = [
@@ -70,6 +84,8 @@ class CSVImporter:
         price_col = self._find_column(normalized, self.PRICE_ALIASES)
         date_col = self._find_column(normalized, self.DATE_ALIASES)
         notes_col = self._find_column(normalized, self.NOTES_ALIASES)
+        transaction_type_col = self._find_column(normalized, self.TRANSACTION_TYPE_ALIASES)
+        fees_col = self._find_column(normalized, self.FEES_ALIASES)
 
         if not ticker_col:
             raise PortfolioImportError(
@@ -102,6 +118,8 @@ class CSVImporter:
             purchase_price=price_col,
             purchase_date=date_col,
             notes=notes_col,
+            transaction_type=transaction_type_col,
+            fees=fees_col,
         )
         return self._detected_mapping
 
@@ -266,7 +284,113 @@ class CSVImporter:
             if notes:
                 result["notes"] = notes
 
+        # Parse transaction_type (optional, defaults to BUY)
+        result["transaction_type"] = TransactionType.BUY
+        if mapping.transaction_type:
+            type_str = row.get(mapping.transaction_type, "").strip().lower()
+            if type_str:
+                if type_str in self.BUY_VALUES:
+                    result["transaction_type"] = TransactionType.BUY
+                elif type_str in self.SELL_VALUES:
+                    result["transaction_type"] = TransactionType.SELL
+                else:
+                    raise ValueError(
+                        f"Row {row_num}: Unknown transaction type '{type_str}'. "
+                        f"Expected one of: {', '.join(self.BUY_VALUES | self.SELL_VALUES)}"
+                    )
+
+        # Parse fees (optional, defaults to 0)
+        result["fees"] = Decimal("0")
+        if mapping.fees:
+            fees_str = row.get(mapping.fees, "").strip()
+            if fees_str:
+                fees_str = self._clean_number(fees_str)
+                try:
+                    fees = Decimal(fees_str)
+                    if fees < 0:
+                        raise ValueError(f"Row {row_num}: Fees cannot be negative")
+                    result["fees"] = fees
+                except InvalidOperation:
+                    raise ValueError(f"Row {row_num}: Invalid fees '{fees_str}'")
+
         return result
+
+    def parse_transactions(
+        self,
+        file_path: Path,
+        portfolio_id: int,
+        mapping: CSVColumnMapping | None = None,
+    ) -> CSVImportResult:
+        """Parse CSV file as transactions (supports BUY/SELL)."""
+        transactions: list[PortfolioTransaction] = []
+        errors: list[CSVImportError] = []
+        total_rows = 0
+
+        with open(file_path, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            headers = reader.fieldnames or []
+
+            if mapping:
+                column_mapping = mapping
+            else:
+                column_mapping = self.detect_columns(headers)
+
+            for row_num, row in enumerate(reader, start=2):
+                total_rows += 1
+                try:
+                    parsed = self._parse_row(row, column_mapping, row_num)
+                    transaction = PortfolioTransaction(
+                        portfolio_id=portfolio_id,
+                        ticker=parsed["ticker"],
+                        transaction_type=parsed["transaction_type"],
+                        quantity=parsed["quantity"],
+                        price=parsed["price"],
+                        transaction_date=parsed["date"],
+                        fees=parsed["fees"],
+                        notes=parsed.get("notes"),
+                    )
+                    transactions.append(transaction)
+                except ValueError as e:
+                    error_str = str(e)
+                    field = "unknown"
+                    value = ""
+
+                    if "ticker" in error_str.lower():
+                        field = "ticker"
+                        value = row.get(column_mapping.ticker, "")
+                    elif "quantity" in error_str.lower():
+                        field = "quantity"
+                        value = row.get(column_mapping.quantity, "")
+                    elif "price" in error_str.lower():
+                        field = "price"
+                        value = row.get(column_mapping.purchase_price, "")
+                    elif "date" in error_str.lower():
+                        field = "date"
+                        value = row.get(column_mapping.purchase_date, "")
+                    elif "transaction type" in error_str.lower():
+                        field = "transaction_type"
+                        value = row.get(column_mapping.transaction_type or "", "")
+                    elif "fees" in error_str.lower():
+                        field = "fees"
+                        value = row.get(column_mapping.fees or "", "")
+
+                    errors.append(CSVImportError(
+                        row_number=row_num,
+                        field=field,
+                        value=str(value),
+                        error=str(e),
+                    ))
+
+        return CSVImportResult(
+            portfolio_id=portfolio_id,
+            file_name=file_path.name,
+            records_total=total_rows,
+            records_success=len(transactions),
+            records_failed=len(errors),
+            transactions_created=transactions,
+            errors=errors,
+            column_mapping=column_mapping,
+        )
 
     def _clean_number(self, value: str) -> str:
         """Clean number string (remove currency symbols, commas)."""

@@ -3,7 +3,7 @@
 from consilium.db.connection import DatabasePool
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 MIGRATIONS = {
     1: """
@@ -241,6 +241,83 @@ CREATE TABLE IF NOT EXISTS portfolio_analysis (
 -- Record version 3
 INSERT INTO schema_versions (version, description) VALUES (3, 'Portfolio management');
 """,
+    4: """
+-- Migration v4: Transaction Tracking (BUY/SELL)
+-- Adds portfolio_transactions table for full buy/sell history and realized P&L tracking
+
+-- Portfolio transactions (full audit trail of buy/sell operations)
+CREATE TABLE IF NOT EXISTS portfolio_transactions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    portfolio_id BIGINT NOT NULL,
+    ticker VARCHAR(20) NOT NULL,
+    transaction_type ENUM('BUY', 'SELL') NOT NULL,
+    quantity DECIMAL(18, 8) NOT NULL,
+    price DECIMAL(15, 4) NOT NULL,
+    transaction_date DATE NOT NULL,
+    fees DECIMAL(10, 2) DEFAULT 0,
+    notes TEXT,
+
+    -- P&L fields (populated for SELL transactions)
+    realized_pnl DECIMAL(18, 2) NULL,
+    holding_period_days INT NULL,
+    cost_basis_used DECIMAL(15, 4) NULL,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE,
+    INDEX idx_portfolio_ticker (portfolio_id, ticker),
+    INDEX idx_transaction_date (transaction_date),
+    INDEX idx_type (transaction_type)
+);
+
+-- Portfolio snapshots for historical performance tracking
+CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    portfolio_id BIGINT NOT NULL,
+    snapshot_date DATE NOT NULL,
+    total_value DECIMAL(18, 2),
+    total_cost_basis DECIMAL(18, 2),
+    total_unrealized_pnl DECIMAL(18, 2),
+    cumulative_realized_pnl DECIMAL(18, 2),
+    cash_balance DECIMAL(18, 2) DEFAULT 0,
+    position_data JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (portfolio_id) REFERENCES portfolios(id) ON DELETE CASCADE,
+    UNIQUE KEY idx_portfolio_date (portfolio_id, snapshot_date)
+);
+
+-- Add realized P&L columns to portfolio_analysis
+ALTER TABLE portfolio_analysis
+ADD COLUMN total_realized_pnl DECIMAL(18, 2) NULL AFTER total_pnl_percent,
+ADD COLUMN total_fees DECIMAL(10, 2) NULL AFTER total_realized_pnl;
+
+-- Migrate existing portfolio_positions to portfolio_transactions as BUY
+INSERT INTO portfolio_transactions (
+    portfolio_id,
+    ticker,
+    transaction_type,
+    quantity,
+    price,
+    transaction_date,
+    notes,
+    created_at
+)
+SELECT
+    portfolio_id,
+    ticker,
+    'BUY',
+    quantity,
+    purchase_price,
+    purchase_date,
+    notes,
+    created_at
+FROM portfolio_positions;
+
+-- Record version 4
+INSERT INTO schema_versions (version, description) VALUES (4, 'Transaction tracking (BUY/SELL)');
+""",
 }
 
 
@@ -293,6 +370,8 @@ async def run_migrations(pool: DatabasePool) -> list[int]:
 async def reset_database(pool: DatabasePool) -> None:
     """Drop all tables and recreate schema. USE WITH CAUTION."""
     tables = [
+        "portfolio_snapshots",
+        "portfolio_transactions",
         "portfolio_analysis",
         "portfolio_imports",
         "portfolio_positions",

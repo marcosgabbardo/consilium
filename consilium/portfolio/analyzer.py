@@ -13,6 +13,7 @@ from consilium.core.portfolio_models import (
     PortfolioPosition,
     PortfolioSummary,
     PortfolioAnalysisResult,
+    PortfolioPerformance,
     PositionWithAnalysis,
     PositionAction,
     SectorAllocation,
@@ -531,3 +532,97 @@ class PortfolioAnalyzer:
             )
 
         return recommendations, warnings
+
+    async def get_performance(
+        self,
+        portfolio: Portfolio,
+        positions: list[PortfolioPosition],
+        refresh_prices: bool = True,
+    ) -> PortfolioPerformance:
+        """
+        Get portfolio performance metrics including realized P&L.
+
+        Args:
+            portfolio: Portfolio metadata
+            positions: List of current positions
+            refresh_prices: Whether to fetch current prices
+
+        Returns:
+            PortfolioPerformance with unrealized and realized P&L
+        """
+        if refresh_prices:
+            self._report_progress("Fetching current prices...")
+            positions = await self._enrich_positions(positions)
+
+        # Calculate unrealized P&L from current positions
+        total_value = Decimal("0")
+        total_cost_basis = Decimal("0")
+
+        for p in positions:
+            total_cost_basis += p.cost_basis
+            if p.current_value is not None:
+                total_value += p.current_value
+
+        total_unrealized_pnl = total_value - total_cost_basis
+        total_unrealized_pnl_percent = (
+            (total_unrealized_pnl / total_cost_basis) * 100
+            if total_cost_basis > 0
+            else Decimal("0")
+        )
+
+        # Get realized P&L from transactions
+        self._report_progress("Calculating realized P&L from transactions...")
+        pool = await get_pool()
+        repo = PortfolioRepository(pool)
+
+        transaction_summary = await repo.get_transaction_summary(portfolio.id)
+        realized_pnl_by_ticker = await repo.get_realized_pnl_by_ticker(portfolio.id)
+
+        total_realized_pnl = Decimal(str(transaction_summary.get("total_realized_pnl", 0) or 0))
+        total_fees = Decimal(str(transaction_summary.get("total_fees", 0) or 0))
+        buy_count = int(transaction_summary.get("buy_count", 0) or 0)
+        sell_count = int(transaction_summary.get("sell_count", 0) or 0)
+        winning_trades = int(transaction_summary.get("winning_trades", 0) or 0)
+        losing_trades = int(transaction_summary.get("losing_trades", 0) or 0)
+        avg_holding_days = transaction_summary.get("avg_holding_days")
+        if avg_holding_days is not None:
+            avg_holding_days = int(avg_holding_days)
+
+        # Find largest gain/loss
+        largest_gain = None
+        largest_loss = None
+        largest_gain_ticker = None
+        largest_loss_ticker = None
+
+        for pnl_data in realized_pnl_by_ticker:
+            pnl = Decimal(str(pnl_data.get("realized_pnl", 0) or 0))
+            ticker = pnl_data.get("ticker", "")
+
+            if pnl > 0:
+                if largest_gain is None or pnl > largest_gain:
+                    largest_gain = pnl
+                    largest_gain_ticker = ticker
+            elif pnl < 0:
+                if largest_loss is None or pnl < largest_loss:
+                    largest_loss = pnl
+                    largest_loss_ticker = ticker
+
+        return PortfolioPerformance(
+            portfolio=portfolio,
+            total_value=total_value,
+            total_cost_basis=total_cost_basis,
+            total_unrealized_pnl=total_unrealized_pnl,
+            total_unrealized_pnl_percent=total_unrealized_pnl_percent,
+            total_realized_pnl=total_realized_pnl,
+            total_fees_paid=total_fees,
+            total_trades=buy_count + sell_count,
+            buy_trades=buy_count,
+            sell_trades=sell_count,
+            winning_trades=winning_trades,
+            losing_trades=losing_trades,
+            avg_holding_period_days=avg_holding_days,
+            largest_gain=largest_gain,
+            largest_loss=largest_loss,
+            largest_gain_ticker=largest_gain_ticker,
+            largest_loss_ticker=largest_loss_ticker,
+        )

@@ -9,6 +9,8 @@ from consilium.db.connection import DatabasePool
 from consilium.core.portfolio_models import (
     Portfolio,
     PortfolioPosition,
+    PortfolioTransaction,
+    TransactionType,
     CSVImportResult,
     CSVImportError,
     CSVColumnMapping,
@@ -238,6 +240,22 @@ class PortfolioRepository:
         )
         return rows
 
+    async def update_position_quantity(
+        self,
+        position_id: int,
+        new_quantity: Decimal,
+    ) -> bool:
+        """Update the quantity of a position (used after partial sells)."""
+        rows, _ = await self._pool.execute(
+            """
+            UPDATE portfolio_positions
+            SET quantity = %s, updated_at = NOW()
+            WHERE id = %s
+            """,
+            (new_quantity, position_id),
+        )
+        return rows > 0
+
     async def get_unique_tickers(self, portfolio_id: int) -> list[str]:
         """Get list of unique tickers in a portfolio."""
         results = await self._pool.fetch_all(
@@ -416,6 +434,269 @@ class PortfolioRepository:
                 result["position_recommendations"] = json.loads(result["position_recommendations"])
         return result
 
+    # ========== Transaction CRUD ==========
+
+    async def add_transaction(
+        self,
+        portfolio_id: int,
+        ticker: str,
+        transaction_type: TransactionType,
+        quantity: Decimal,
+        price: Decimal,
+        transaction_date: date,
+        fees: Decimal = Decimal("0"),
+        notes: str | None = None,
+        realized_pnl: Decimal | None = None,
+        holding_period_days: int | None = None,
+        cost_basis_used: Decimal | None = None,
+    ) -> int:
+        """Add a transaction to a portfolio. Returns transaction_id."""
+        _, transaction_id = await self._pool.execute(
+            """
+            INSERT INTO portfolio_transactions
+            (portfolio_id, ticker, transaction_type, quantity, price, transaction_date,
+             fees, notes, realized_pnl, holding_period_days, cost_basis_used)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                portfolio_id,
+                ticker.upper().strip(),
+                transaction_type.value,
+                float(quantity),
+                float(price),
+                transaction_date,
+                float(fees),
+                notes,
+                float(realized_pnl) if realized_pnl is not None else None,
+                holding_period_days,
+                float(cost_basis_used) if cost_basis_used is not None else None,
+            ),
+        )
+        return transaction_id
+
+    async def get_transaction(self, transaction_id: int) -> PortfolioTransaction | None:
+        """Get a transaction by ID."""
+        result = await self._pool.fetch_one(
+            "SELECT * FROM portfolio_transactions WHERE id = %s",
+            (transaction_id,),
+        )
+        if result:
+            return self._map_transaction(result)
+        return None
+
+    async def get_transactions(
+        self,
+        portfolio_id: int,
+        ticker: str | None = None,
+        transaction_type: TransactionType | None = None,
+        limit: int | None = None,
+    ) -> list[PortfolioTransaction]:
+        """Get transactions for a portfolio with optional filters."""
+        query = "SELECT * FROM portfolio_transactions WHERE portfolio_id = %s"
+        params: list[Any] = [portfolio_id]
+
+        if ticker:
+            query += " AND ticker = %s"
+            params.append(ticker.upper().strip())
+
+        if transaction_type:
+            query += " AND transaction_type = %s"
+            params.append(transaction_type.value)
+
+        query += " ORDER BY transaction_date DESC, id DESC"
+
+        if limit:
+            query += " LIMIT %s"
+            params.append(limit)
+
+        results = await self._pool.fetch_all(query, tuple(params))
+        return [self._map_transaction(r) for r in results]
+
+    async def get_buy_transactions(
+        self,
+        portfolio_id: int,
+        ticker: str,
+    ) -> list[PortfolioTransaction]:
+        """Get all buy transactions for a ticker (for P&L calculation)."""
+        results = await self._pool.fetch_all(
+            """
+            SELECT * FROM portfolio_transactions
+            WHERE portfolio_id = %s AND ticker = %s AND transaction_type = 'BUY'
+            ORDER BY transaction_date ASC, id ASC
+            """,
+            (portfolio_id, ticker.upper().strip()),
+        )
+        return [self._map_transaction(r) for r in results]
+
+    async def delete_transaction(self, transaction_id: int) -> bool:
+        """Delete a single transaction."""
+        rows, _ = await self._pool.execute(
+            "DELETE FROM portfolio_transactions WHERE id = %s",
+            (transaction_id,),
+        )
+        return rows > 0
+
+    async def get_transaction_summary(
+        self,
+        portfolio_id: int,
+    ) -> dict[str, Any]:
+        """Get transaction summary statistics for a portfolio."""
+        result = await self._pool.fetch_one(
+            """
+            SELECT
+                COUNT(*) as total_transactions,
+                SUM(CASE WHEN transaction_type = 'BUY' THEN 1 ELSE 0 END) as buy_count,
+                SUM(CASE WHEN transaction_type = 'SELL' THEN 1 ELSE 0 END) as sell_count,
+                SUM(CASE WHEN transaction_type = 'SELL' AND realized_pnl > 0 THEN 1 ELSE 0 END) as winning_trades,
+                SUM(CASE WHEN transaction_type = 'SELL' AND realized_pnl < 0 THEN 1 ELSE 0 END) as losing_trades,
+                COALESCE(SUM(CASE WHEN transaction_type = 'SELL' THEN realized_pnl ELSE 0 END), 0) as total_realized_pnl,
+                COALESCE(SUM(fees), 0) as total_fees,
+                AVG(CASE WHEN transaction_type = 'SELL' THEN holding_period_days ELSE NULL END) as avg_holding_days
+            FROM portfolio_transactions
+            WHERE portfolio_id = %s
+            """,
+            (portfolio_id,),
+        )
+        return result or {}
+
+    async def get_realized_pnl_by_ticker(
+        self,
+        portfolio_id: int,
+    ) -> list[dict[str, Any]]:
+        """Get realized P&L breakdown by ticker."""
+        results = await self._pool.fetch_all(
+            """
+            SELECT
+                ticker,
+                SUM(CASE WHEN realized_pnl IS NOT NULL THEN realized_pnl ELSE 0 END) as realized_pnl,
+                SUM(fees) as total_fees,
+                COUNT(CASE WHEN transaction_type = 'SELL' THEN 1 END) as sell_count,
+                SUM(CASE WHEN transaction_type = 'SELL' AND realized_pnl > 0 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN transaction_type = 'SELL' AND realized_pnl < 0 THEN 1 ELSE 0 END) as losses
+            FROM portfolio_transactions
+            WHERE portfolio_id = %s
+            GROUP BY ticker
+            ORDER BY realized_pnl DESC
+            """,
+            (portfolio_id,),
+        )
+        return results
+
+    async def get_net_positions_from_transactions(
+        self,
+        portfolio_id: int,
+    ) -> list[dict[str, Any]]:
+        """
+        Calculate net positions from transactions (buys - sells).
+        Returns aggregated position data per ticker.
+        """
+        results = await self._pool.fetch_all(
+            """
+            SELECT
+                ticker,
+                SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE -quantity END) as net_quantity,
+                SUM(CASE WHEN transaction_type = 'BUY' THEN quantity * price ELSE 0 END) as total_buy_cost,
+                SUM(CASE WHEN transaction_type = 'BUY' THEN quantity ELSE 0 END) as total_bought,
+                SUM(CASE WHEN transaction_type = 'SELL' THEN quantity ELSE 0 END) as total_sold,
+                MIN(CASE WHEN transaction_type = 'BUY' THEN transaction_date END) as first_buy_date,
+                MAX(transaction_date) as last_transaction_date
+            FROM portfolio_transactions
+            WHERE portfolio_id = %s
+            GROUP BY ticker
+            HAVING net_quantity > 0
+            ORDER BY ticker
+            """,
+            (portfolio_id,),
+        )
+
+        # Calculate average cost per share for remaining positions
+        processed = []
+        for r in results:
+            net_qty = Decimal(str(r["net_quantity"]))
+            if net_qty > 0:
+                # Need to calculate average cost of remaining shares
+                avg_cost = await self._calculate_avg_cost_remaining(
+                    portfolio_id, r["ticker"], net_qty
+                )
+                processed.append({
+                    "ticker": r["ticker"],
+                    "net_quantity": net_qty,
+                    "avg_cost": avg_cost,
+                    "cost_basis": net_qty * avg_cost,
+                    "first_buy_date": r["first_buy_date"],
+                    "last_transaction_date": r["last_transaction_date"],
+                    "total_bought": Decimal(str(r["total_bought"])),
+                    "total_sold": Decimal(str(r["total_sold"])),
+                })
+
+        return processed
+
+    async def _calculate_avg_cost_remaining(
+        self,
+        portfolio_id: int,
+        ticker: str,
+        remaining_qty: Decimal,
+    ) -> Decimal:
+        """
+        Calculate average cost of remaining shares using weighted average method.
+        """
+        # Get all buy transactions
+        buys = await self.get_buy_transactions(portfolio_id, ticker)
+        if not buys:
+            return Decimal("0")
+
+        # Total bought and total cost
+        total_qty = sum(b.quantity for b in buys)
+        total_cost = sum(b.quantity * b.price for b in buys)
+
+        if total_qty == 0:
+            return Decimal("0")
+
+        # Weighted average price
+        return total_cost / total_qty
+
+    async def calculate_realized_pnl_for_sell(
+        self,
+        portfolio_id: int,
+        ticker: str,
+        sell_quantity: Decimal,
+        sell_price: Decimal,
+        sell_date: date,
+    ) -> tuple[Decimal, int, Decimal]:
+        """
+        Calculate realized P&L for a sell transaction using weighted average method.
+
+        Returns:
+            tuple of (realized_pnl, holding_period_days, cost_basis_used)
+        """
+        # Get buy transactions
+        buys = await self.get_buy_transactions(portfolio_id, ticker)
+        if not buys:
+            return Decimal("0"), 0, Decimal("0")
+
+        # Calculate weighted average cost
+        total_qty = sum(b.quantity for b in buys)
+        total_cost = sum(b.quantity * b.price for b in buys)
+
+        if total_qty == 0:
+            return Decimal("0"), 0, Decimal("0")
+
+        avg_cost = total_cost / total_qty
+
+        # Calculate realized P&L
+        realized_pnl = (sell_price - avg_cost) * sell_quantity
+
+        # Calculate average holding period
+        total_weighted_days = Decimal("0")
+        for buy in buys:
+            days_held = (sell_date - buy.transaction_date).days
+            weight = buy.quantity / total_qty
+            total_weighted_days += Decimal(str(days_held)) * weight
+
+        holding_period_days = int(total_weighted_days)
+
+        return realized_pnl, holding_period_days, avg_cost
+
     # ========== Helpers ==========
 
     def _map_position(self, row: dict[str, Any]) -> PortfolioPosition:
@@ -428,6 +709,25 @@ class PortfolioRepository:
             purchase_price=Decimal(str(row["purchase_price"])),
             purchase_date=row["purchase_date"],
             notes=row.get("notes"),
+            created_at=row.get("created_at"),
+            updated_at=row.get("updated_at"),
+        )
+
+    def _map_transaction(self, row: dict[str, Any]) -> PortfolioTransaction:
+        """Map database row to PortfolioTransaction model."""
+        return PortfolioTransaction(
+            id=row["id"],
+            portfolio_id=row["portfolio_id"],
+            ticker=row["ticker"],
+            transaction_type=TransactionType(row["transaction_type"]),
+            quantity=Decimal(str(row["quantity"])),
+            price=Decimal(str(row["price"])),
+            transaction_date=row["transaction_date"],
+            fees=Decimal(str(row["fees"])) if row.get("fees") else Decimal("0"),
+            notes=row.get("notes"),
+            realized_pnl=Decimal(str(row["realized_pnl"])) if row.get("realized_pnl") else None,
+            holding_period_days=row.get("holding_period_days"),
+            cost_basis_used=Decimal(str(row["cost_basis_used"])) if row.get("cost_basis_used") else None,
             created_at=row.get("created_at"),
             updated_at=row.get("updated_at"),
         )
