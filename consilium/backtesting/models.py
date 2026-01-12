@@ -19,6 +19,34 @@ class BacktestStrategyType(str, Enum):
         return self.value
 
 
+class SignalGranularity(str, Enum):
+    """Granularity for retroactive signal generation."""
+
+    MONTHLY = "monthly"  # 12 signals per year
+    QUARTERLY = "quarterly"  # 4 signals per year
+    SEMIANNUAL = "semiannual"  # 2 signals per year
+    ANNUAL = "annual"  # 1 signal per year
+
+    def __str__(self) -> str:
+        return self.value
+
+    @property
+    def months_interval(self) -> int:
+        """Return the interval in months between signals."""
+        intervals = {
+            SignalGranularity.MONTHLY: 1,
+            SignalGranularity.QUARTERLY: 3,
+            SignalGranularity.SEMIANNUAL: 6,
+            SignalGranularity.ANNUAL: 12,
+        }
+        return intervals[self]
+
+    @property
+    def signals_per_year(self) -> int:
+        """Return the number of signals generated per year."""
+        return 12 // self.months_interval
+
+
 class TradeAction(str, Enum):
     """Trade action type."""
 

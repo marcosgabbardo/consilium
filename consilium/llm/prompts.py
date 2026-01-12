@@ -126,8 +126,25 @@ Respond ONLY with the JSON object, no additional text or markdown.
         specialist_reports: list[SpecialistReport] | None = None,
     ) -> str:
         """Build analysis prompt for an investor agent."""
-        prompt = f"""## Stock Under Analysis: {stock.ticker}
+        from datetime import date as date_type, datetime
 
+        # Check if this is historical/retroactive analysis
+        analysis_date = stock.fetched_at.date() if stock.fetched_at else date_type.today()
+        is_retroactive = analysis_date < date_type.today()
+
+        date_header = ""
+        if is_retroactive:
+            date_header = f"""
+### ⚠️ RETROACTIVE ANALYSIS
+**Analysis Date:** {analysis_date}
+You are analyzing this stock AS IF IT WERE {analysis_date}.
+Price data and technical indicators are point-in-time accurate.
+Note: Fundamental metrics may reflect more recent data due to data source limitations.
+
+"""
+
+        prompt = f"""## Stock Under Analysis: {stock.ticker}
+{date_header}
 ### Company Overview
 Name: {stock.company.name}
 Sector: {stock.company.sector or 'N/A'}

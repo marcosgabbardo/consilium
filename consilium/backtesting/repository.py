@@ -18,6 +18,13 @@ from consilium.backtesting.models import (
 from consilium.core.enums import SignalType
 
 
+def _r(val: Any, decimals: int = 4) -> float | None:
+    """Round value for database storage to avoid truncation warnings."""
+    if val is None:
+        return None
+    return round(float(val), decimals)
+
+
 class BacktestRepository:
     """Repository for storing and retrieving backtest results."""
 
@@ -70,30 +77,30 @@ class BacktestRepository:
                 result.start_date,
                 result.end_date,
                 result.strategy_type.value,
-                float(result.threshold_value) if result.threshold_value else None,
-                float(result.initial_capital),
+                _r(result.threshold_value, 2),
+                _r(result.initial_capital, 2),
                 json.dumps(result.agent_filter) if result.agent_filter else None,
-                float(result.final_value),
-                float(m.total_return_pct),
-                float(m.cagr),
-                float(m.alpha),
-                float(m.beta),
-                float(m.sharpe_ratio),
-                float(m.sortino_ratio),
-                float(m.calmar_ratio),
-                float(m.max_drawdown),
+                _r(result.final_value, 2),
+                _r(m.total_return_pct, 4),
+                _r(m.cagr, 4),
+                _r(m.alpha, 4),
+                _r(m.beta, 4),
+                _r(m.sharpe_ratio, 4),
+                _r(m.sortino_ratio, 4),
+                _r(m.calmar_ratio, 4),
+                _r(m.max_drawdown, 4),
                 m.max_drawdown_duration_days,
-                float(m.var_95),
+                _r(m.var_95, 4),
                 m.total_trades,
                 m.winning_trades,
                 m.losing_trades,
-                float(m.profit_factor),
-                float(m.win_rate),
+                _r(m.profit_factor, 4),
+                min(_r(m.win_rate, 4) or 0, 99.9999),
                 m.avg_holding_days,
-                float(m.avg_win),
-                float(m.avg_loss),
-                float(m.benchmark_return),
-                float(m.excess_return),
+                _r(m.avg_win, 2),
+                _r(m.avg_loss, 2),
+                _r(m.benchmark_return, 4),
+                _r(m.excess_return, 4),
                 result.created_at,
             ),
         )
@@ -115,11 +122,11 @@ class BacktestRepository:
                         backtest_id,
                         trade.trade_date,
                         trade.trade_type.value,
-                        float(trade.price),
-                        float(trade.quantity),
+                        _r(trade.price, 4),
+                        _r(trade.quantity, 8),
                         trade.signal.value if trade.signal else None,
-                        float(trade.score) if trade.score else None,
-                        float(trade.realized_pnl) if trade.realized_pnl else None,
+                        _r(trade.score, 2),
+                        _r(trade.realized_pnl, 2),
                     ),
                 )
 
@@ -146,12 +153,12 @@ class BacktestRepository:
                     (
                         backtest_id,
                         snapshot.date,
-                        float(snapshot.portfolio_value),
-                        float(snapshot.cash),
-                        float(snapshot.position_value),
-                        float(snapshot.position_qty),
-                        float(snapshot.benchmark_value),
-                        float(snapshot.drawdown),
+                        _r(snapshot.portfolio_value, 2),
+                        _r(snapshot.cash, 2),
+                        _r(snapshot.position_value, 2),
+                        _r(snapshot.position_qty, 8),
+                        _r(snapshot.benchmark_value, 2),
+                        _r(snapshot.drawdown, 4),
                     ),
                 )
 

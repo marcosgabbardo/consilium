@@ -96,7 +96,7 @@ class HistoryRepository:
         if result.results:
             first_consensus = result.results[0]
             consensus_signal = first_consensus.final_signal.value
-            consensus_score = float(first_consensus.weighted_score)
+            consensus_score = round(float(first_consensus.weighted_score), 2)
             consensus_confidence = first_consensus.confidence.value
 
         # Insert main analysis record with consensus fields

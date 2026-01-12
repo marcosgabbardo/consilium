@@ -3680,5 +3680,242 @@ def backtest_show_command(
     formatter.display_result(result, show_trades=True, max_trades=max_trades)
 
 
+@app.command("backtest-generate")
+def backtest_generate_command(
+    ticker: str = typer.Argument(
+        ...,
+        help="Ticker symbol to generate signals for (e.g., 'AAPL')",
+    ),
+    start: Optional[str] = typer.Option(
+        None,
+        "--start",
+        "-s",
+        help="Start date (YYYY-MM-DD)",
+    ),
+    end: Optional[str] = typer.Option(
+        None,
+        "--end",
+        "-e",
+        help="End date (YYYY-MM-DD)",
+    ),
+    period: Optional[str] = typer.Option(
+        "2y",
+        "--period",
+        "-p",
+        help="Period (e.g., '1y', '2y', '6m') - used if start/end not provided",
+    ),
+    granularity: str = typer.Option(
+        "monthly",
+        "--granularity",
+        "-g",
+        help="Signal frequency: monthly, quarterly, semiannual, annual",
+    ),
+    agents: Optional[str] = typer.Option(
+        None,
+        "--agents",
+        "-a",
+        help="Comma-separated list of agent IDs (e.g., 'buffett,simons')",
+    ),
+    no_specialists: bool = typer.Option(
+        False,
+        "--no-specialists",
+        help="Skip specialist analysis (faster, cheaper)",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip cost confirmation prompt",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show detailed progress",
+    ),
+) -> None:
+    """
+    Generate retroactive trading signals using real AI agents.
+
+    This command runs actual analysis on historical data points to generate
+    meaningful signals for backtesting. Uses point-in-time data to avoid
+    look-ahead bias.
+
+    WARNING: This can be expensive as it runs real API calls for each signal date.
+
+    Examples:
+        consilium backtest-generate AAPL --period 2y --granularity monthly
+        consilium backtest-generate NVDA --start 2023-01-01 --end 2025-01-01 -g quarterly
+        consilium backtest-generate TSLA --agents buffett,lynch --no-specialists
+        consilium backtest-generate MSFT --period 1y -g monthly --yes
+    """
+    from datetime import date, datetime
+    from decimal import Decimal
+
+    from rich.panel import Panel
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from rich.table import Table
+
+    from consilium.backtesting import parse_period
+    from consilium.backtesting.models import SignalGranularity
+    from consilium.backtesting.signal_generator import RetroactiveSignalGenerator
+    from consilium.db.connection import close_pool
+
+    settings = get_settings()
+    ticker = ticker.upper().strip()
+
+    # Parse dates
+    if start and end:
+        try:
+            start_date = datetime.strptime(start, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end, "%Y-%m-%d").date()
+        except ValueError:
+            console.print("[red]Error:[/red] Invalid date format. Use YYYY-MM-DD.")
+            raise typer.Exit(1)
+    elif period:
+        start_date, end_date = parse_period(period)
+    else:
+        console.print("[red]Error:[/red] Provide either --start/--end or --period.")
+        raise typer.Exit(1)
+
+    # Parse granularity
+    try:
+        signal_granularity = SignalGranularity(granularity.lower())
+    except ValueError:
+        console.print(
+            f"[red]Error:[/red] Invalid granularity '{granularity}'. "
+            "Use: monthly, quarterly, semiannual, annual"
+        )
+        raise typer.Exit(1)
+
+    # Parse agent filter
+    agent_filter = None
+    if agents:
+        agent_filter = [a.strip().lower() for a in agents.split(",")]
+
+    include_specialists = not no_specialists
+
+    # Create generator and calculate schedule
+    generator = RetroactiveSignalGenerator(settings=settings)
+    dates = generator.generate_date_schedule(start_date, end_date, signal_granularity)
+    num_dates = len(dates)
+
+    # Count agents
+    from consilium.agents.registry import AgentRegistry
+    registry = AgentRegistry(settings)
+    investors = registry.get_investors(agent_filter)
+    specialists = registry.get_specialists() if include_specialists else []
+    num_investors = len(investors)
+    num_specialists = len(specialists)
+
+    # Estimate cost
+    estimated_cost = generator.estimate_cost(
+        num_dates=num_dates,
+        num_investors=num_investors,
+        num_specialists=num_specialists,
+        include_specialists=include_specialists,
+    )
+
+    # Display cost estimation
+    console.print()
+    cost_table = Table(title="Retroactive Signal Generation Plan", show_header=False)
+    cost_table.add_column("Field", style="cyan")
+    cost_table.add_column("Value", style="white")
+
+    cost_table.add_row("Ticker", ticker)
+    cost_table.add_row("Period", f"{start_date} to {end_date}")
+    cost_table.add_row("Granularity", signal_granularity.value)
+    cost_table.add_row("Signal Dates", str(num_dates))
+    cost_table.add_row("Investors", f"{num_investors} agents")
+    cost_table.add_row("Specialists", f"{num_specialists} agents" if include_specialists else "Skipped")
+    cost_table.add_row("", "")
+    cost_table.add_row("Estimated Cost", f"[bold yellow]${estimated_cost:.2f}[/bold yellow]")
+
+    console.print(cost_table)
+    console.print()
+
+    # Confirm with user
+    if not yes:
+        console.print(
+            Panel(
+                "[yellow]This will run real AI analysis for each signal date.\n"
+                "API costs will be incurred.[/yellow]",
+                title="⚠️  Cost Warning",
+            )
+        )
+        if not typer.confirm("Do you want to proceed?"):
+            console.print("[dim]Cancelled.[/dim]")
+            raise typer.Exit(0)
+
+    # Run signal generation
+    progress_messages = []
+
+    def progress_callback(msg: str) -> None:
+        if verbose:
+            console.print(f"  [dim]{msg}[/dim]")
+        progress_messages.append(msg)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task(f"Generating signals for {ticker}...", total=None)
+
+        async def run_generation():
+            try:
+                gen = RetroactiveSignalGenerator(
+                    settings=settings,
+                    progress_callback=progress_callback,
+                )
+                return await gen.generate_signals(
+                    ticker=ticker,
+                    start_date=start_date,
+                    end_date=end_date,
+                    granularity=signal_granularity,
+                    agent_filter=agent_filter,
+                    include_specialists=include_specialists,
+                )
+            finally:
+                await close_pool()
+
+        try:
+            signals = asyncio.run(run_generation())
+        except Exception as e:
+            console.print(f"\n[red]Error during signal generation:[/red] {e}")
+            raise typer.Exit(1)
+
+    # Display results
+    console.print()
+    if signals:
+        results_table = Table(title=f"Generated Signals for {ticker}")
+        results_table.add_column("Date", style="cyan")
+        results_table.add_column("Signal", style="white")
+        results_table.add_column("Score", justify="right")
+        results_table.add_column("Source", style="dim")
+
+        for signal in signals:
+            signal_color = {
+                "STRONG_BUY": "bold green",
+                "BUY": "green",
+                "HOLD": "yellow",
+                "SELL": "red",
+                "STRONG_SELL": "bold red",
+            }.get(signal.signal.value, "white")
+
+            results_table.add_row(
+                str(signal.date),
+                f"[{signal_color}]{signal.signal.value}[/{signal_color}]",
+                f"{signal.weighted_score:.1f}",
+                signal.source,
+            )
+
+        console.print(results_table)
+        console.print(f"\n[green]Successfully generated {len(signals)} signals.[/green]")
+        console.print("[dim]Signals have been saved to history for use in backtesting.[/dim]")
+    else:
+        console.print("[yellow]No signals were generated.[/yellow]")
+
+
 if __name__ == "__main__":
     app()

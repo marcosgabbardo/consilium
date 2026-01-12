@@ -279,3 +279,80 @@ class AnalysisOrchestrator:
             )
 
         return result.results[0]
+
+    async def analyze_with_stock_data(
+        self,
+        ticker: str,
+        stock_data: Stock,
+        agent_filter: list[str] | None = None,
+        include_specialists: bool = True,
+        analysis_date: datetime | None = None,
+    ) -> AnalysisResult:
+        """
+        Analyze using pre-fetched stock data (for backtesting).
+
+        This method allows running analysis on historical data that was
+        fetched point-in-time, avoiding look-ahead bias in backtesting.
+
+        Args:
+            ticker: Ticker symbol being analyzed
+            stock_data: Pre-fetched Stock object with historical data
+            agent_filter: Optional list of agent IDs to use
+            include_specialists: Whether to run specialist analysis
+            analysis_date: Optional date to use for the analysis record
+
+        Returns:
+            AnalysisResult with consensus for the ticker
+        """
+        started_at = analysis_date or datetime.utcnow()
+
+        # Get agents
+        investors = self._registry.get_investors(agent_filter)
+        specialists = self._registry.get_specialists() if include_specialists else []
+
+        if not investors:
+            raise AgentError("No investor agents available for analysis")
+
+        # Run specialist analysis
+        specialist_reports: list[SpecialistReport] = []
+        if specialists:
+            self._report_progress(f"Running specialist analysis for {ticker}...")
+            specialist_reports = await self._run_specialists(stock_data, specialists)
+
+        # Run investor analysis
+        self._report_progress(f"Running investor analysis for {ticker}...")
+        agent_responses = await self._run_investors(
+            stock_data, investors, specialist_reports
+        )
+
+        # Calculate consensus
+        self._report_progress(f"Calculating consensus for {ticker}...")
+        consensus = self._consensus.calculate_consensus(
+            ticker=ticker,
+            agent_responses=agent_responses,
+            specialist_reports=specialist_reports,
+        )
+
+        completed_at = datetime.utcnow()
+        execution_time = Decimal(str((completed_at - started_at).total_seconds()))
+
+        analysis_result = AnalysisResult(
+            tickers=[ticker],
+            results=[consensus],
+            execution_time_seconds=execution_time,
+            agents_used=len(investors) + len(specialists),
+            started_at=started_at,
+            completed_at=completed_at,
+        )
+
+        # Auto-save to history if enabled
+        if self._save_to_history:
+            try:
+                pool = await get_pool()
+                history_repo = HistoryRepository(pool)
+                analysis_id = await history_repo.save_analysis(analysis_result)
+                self._report_progress(f"Analysis saved to history (ID: {analysis_id})")
+            except Exception as e:
+                self._report_progress(f"Warning: Failed to save to history: {e}")
+
+        return analysis_result
