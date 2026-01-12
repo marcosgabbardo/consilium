@@ -33,14 +33,18 @@
 6. [Stock Universes](#stock-universes)
    - [Available Universes](#available-universes)
    - [Universe Commands](#universe-commands)
-7. [History & Tracking](#history--tracking)
+7. [Backtesting](#backtesting)
+   - [Running Backtests](#running-backtests)
+   - [Backtest Strategies](#backtest-strategies)
+   - [Backtest History](#backtest-history)
+8. [History & Tracking](#history--tracking)
    - [Analysis History](#analysis-history)
    - [Q&A History](#qa-history)
-8. [Cost Estimation](#cost-estimation)
-9. [Database Management](#database-management)
-10. [Configuration](#configuration)
-11. [Architecture](#architecture)
-12. [Troubleshooting](#troubleshooting)
+9. [Cost Estimation](#cost-estimation)
+10. [Database Management](#database-management)
+11. [Configuration](#configuration)
+12. [Architecture](#architecture)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -95,6 +99,7 @@ The name comes from Latin *consilium* ("council" or "deliberation"), reflecting 
 - **Stock Universe Management** — Pre-built universes (S&P 500, NASDAQ 100, Dow 30, MAG7, Brazilian)
 - **Watchlist Management** — Create, manage, and batch-analyze stock watchlists
 - **Asset Comparison** — Side-by-side comparison with ranking and agent consensus matrix
+- **Backtesting Engine** — Test strategies against historical data with Sharpe, Sortino, Calmar ratios
 - **Analysis History** — All analyses automatically saved to MySQL with full tracking
 - **International Markets** — Support for global exchanges (US, Brazil `.SA`, Europe, Asia)
 - **Rich CLI Output** — Beautiful tables and panels with detailed reasoning
@@ -595,6 +600,111 @@ consilium universe delete old-universe --force
 
 ---
 
+## Backtesting
+
+Test agent recommendations against historical data with comprehensive risk metrics.
+
+### Running Backtests
+
+```bash
+# Basic backtest (uses simulated signals if no historical data)
+consilium backtest AAPL --period 2y
+
+# With specific date range
+consilium backtest AAPL --start 2023-01-01 --end 2025-01-01
+
+# Custom benchmark (default: SPY)
+consilium backtest NVDA --benchmark QQQ --period 2y
+
+# Filter specific agents
+consilium backtest TSLA --agents buffett,simons,lynch --period 1y
+
+# Custom capital and slippage
+consilium backtest MSFT --capital 50000 --slippage 0.15 --period 2y
+
+# Verbose output with full trade history
+consilium backtest AAPL --period 2y --verbose
+```
+
+### Backtest Strategies
+
+**Signal-Based Strategy** (default):
+- BUY on `BUY` or `STRONG_BUY` signals
+- SELL on `SELL` or `STRONG_SELL` signals
+- HOLD on `HOLD` signals
+
+```bash
+consilium backtest AAPL --strategy signal --period 2y
+```
+
+**Threshold-Based Strategy**:
+- BUY when score exceeds threshold
+- SELL when score falls below negative threshold
+
+```bash
+consilium backtest AAPL --strategy threshold --threshold 50 --period 2y
+```
+
+### Backtest Metrics
+
+| Category | Metrics |
+|----------|---------|
+| **Returns** | Total Return, CAGR, Alpha, Excess Return |
+| **Risk** | Sharpe Ratio, Sortino Ratio, Calmar Ratio, Max Drawdown, VaR (95%), Beta |
+| **Trade Stats** | Total Trades, Win Rate, Profit Factor, Avg Holding Period |
+
+**Example Output:**
+
+```
+╭────────────────────────────── Backtest Results ──────────────────────────────╮
+│ Ticker: AAPL                                                                 │
+│ Period: 2024-01-12 to 2026-01-12 (731 days)                                  │
+│ Strategy: Signal                                                             │
+│ Benchmark: SPY                                                               │
+│ Initial Capital: $100,000.00                                                 │
+│                                                                              │
+│ Final Value: $115,939.49                                                     │
+│ Total Return: +15.94% ($+15,939.49)                                          │
+│ Alpha vs SPY: -0.85%                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+             Returns
+
+   CAGR                  +7.72%
+   Benchmark Return     +49.31%
+   Excess Return        -33.37%
+
+           Risk Metrics
+
+   Sharpe Ratio            0.28
+   Sortino Ratio           0.39
+   Calmar Ratio            0.37
+   Max Drawdown         -21.09%
+   VaR (95%)             -2.05%
+   Beta                    0.34
+
+           Trade Statistics
+
+   Total Trades                   10
+   Win Rate                    60.0%
+   Profit Factor                2.34
+   Avg Holding Period        77 days
+```
+
+### Backtest History
+
+```bash
+# List all backtests
+consilium backtest-history
+
+# Filter by ticker
+consilium backtest-history --ticker AAPL --limit 20
+
+# View details of a specific backtest (with full trade log)
+consilium backtest-show 1
+```
+
+---
+
 ## History & Tracking
 
 ### Analysis History
@@ -715,6 +825,9 @@ consilium --version
 | `portfolio_analysis` | Portfolio-level analysis results |
 | `ask_questions` | Q&A session history |
 | `ask_responses` | Individual agent Q&A responses |
+| `backtest_runs` | Backtest execution results |
+| `backtest_trades` | Individual trades in backtests |
+| `backtest_snapshots` | Daily portfolio snapshots |
 | `schema_versions` | Migration tracking |
 
 ---
@@ -825,11 +938,19 @@ consilium/
 ├── portfolio/
 │   ├── importer.py        # CSV import with auto-detection
 │   └── analyzer.py        # Portfolio analysis orchestration
+├── backtesting/
+│   ├── engine.py          # Backtest orchestrator
+│   ├── strategies.py      # Signal & threshold strategies
+│   ├── simulator.py       # Trade execution simulator
+│   ├── metrics.py         # Financial metrics calculator
+│   ├── models.py          # BacktestResult, BacktestTrade, etc.
+│   └── repository.py      # Backtest persistence
 └── output/
     ├── formatters.py      # Rich tables and panels
     ├── comparison.py      # Asset comparison formatter
     ├── ask_formatter.py   # Q&A output formatter
     ├── portfolio_formatter.py  # Portfolio display formatter
+    ├── backtest_formatter.py  # Backtest results formatter
     └── exporters.py       # JSON, CSV, MD export
 ```
 
@@ -898,7 +1019,7 @@ consilium analyze PETR3      # Wrong - will get 404
 - [x] Portfolio management (import, P&L tracking, analysis)
 - [x] Transaction tracking (BUY/SELL with realized P&L)
 - [x] Ask Investor Q&A (direct questions to agents)
-- [ ] Backtesting engine
+- [x] Backtesting engine (signal & threshold strategies, full metrics suite)
 - [ ] Advanced screening with presets
 - [ ] Agent debates (bull vs bear)
 - [ ] Web dashboard interface

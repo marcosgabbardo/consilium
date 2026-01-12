@@ -3,7 +3,7 @@
 from consilium.db.connection import DatabasePool
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 MIGRATIONS = {
     1: """
@@ -371,6 +371,94 @@ CREATE TABLE IF NOT EXISTS ask_responses (
 -- Record version 5
 INSERT INTO schema_versions (version, description) VALUES (5, 'Ask Investor Q&A');
 """,
+    6: """
+-- Migration v6: Backtesting Engine
+-- Adds tables for backtest runs and individual trades
+
+-- Backtest runs table
+CREATE TABLE IF NOT EXISTS backtest_runs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    ticker VARCHAR(20) NOT NULL,
+    benchmark VARCHAR(20) DEFAULT 'SPY',
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    strategy_type ENUM('signal', 'threshold') NOT NULL DEFAULT 'signal',
+    threshold_value DECIMAL(6, 2) NULL,
+    initial_capital DECIMAL(18, 2) NOT NULL,
+
+    -- Agent filter (JSON array of agent IDs, null means all agents)
+    agent_filter JSON NULL,
+
+    -- Final results
+    final_value DECIMAL(18, 2),
+    total_return DECIMAL(10, 4),
+    cagr DECIMAL(8, 4),
+    alpha DECIMAL(8, 4),
+    beta DECIMAL(6, 4),
+    sharpe_ratio DECIMAL(6, 4),
+    sortino_ratio DECIMAL(6, 4),
+    calmar_ratio DECIMAL(6, 4),
+    max_drawdown DECIMAL(8, 4),
+    max_drawdown_days INT,
+    var_95 DECIMAL(8, 4),
+
+    -- Trade statistics
+    total_trades INT DEFAULT 0,
+    winning_trades INT DEFAULT 0,
+    losing_trades INT DEFAULT 0,
+    profit_factor DECIMAL(8, 4),
+    win_rate DECIMAL(6, 4),
+    avg_holding_days INT,
+    avg_win DECIMAL(18, 2),
+    avg_loss DECIMAL(18, 2),
+
+    -- Benchmark comparison
+    benchmark_return DECIMAL(10, 4),
+    excess_return DECIMAL(10, 4),
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    INDEX idx_ticker (ticker),
+    INDEX idx_created (created_at),
+    INDEX idx_strategy (strategy_type)
+);
+
+-- Individual trades within a backtest
+CREATE TABLE IF NOT EXISTS backtest_trades (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    backtest_id BIGINT NOT NULL,
+    trade_date DATE NOT NULL,
+    trade_type ENUM('BUY', 'SELL') NOT NULL,
+    price DECIMAL(15, 4) NOT NULL,
+    quantity DECIMAL(18, 8) NOT NULL,
+    `signal` VARCHAR(20),
+    score DECIMAL(6, 2),
+    realized_pnl DECIMAL(18, 2),
+
+    FOREIGN KEY (backtest_id) REFERENCES backtest_runs(id) ON DELETE CASCADE,
+    INDEX idx_backtest (backtest_id),
+    INDEX idx_trade_date (trade_date)
+);
+
+-- Daily snapshots for equity curve visualization
+CREATE TABLE IF NOT EXISTS backtest_snapshots (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    backtest_id BIGINT NOT NULL,
+    snapshot_date DATE NOT NULL,
+    portfolio_value DECIMAL(18, 2) NOT NULL,
+    cash DECIMAL(18, 2) NOT NULL,
+    position_value DECIMAL(18, 2) NOT NULL,
+    position_qty DECIMAL(18, 8) NOT NULL,
+    benchmark_value DECIMAL(18, 2) NOT NULL,
+    drawdown DECIMAL(8, 4) DEFAULT 0,
+
+    FOREIGN KEY (backtest_id) REFERENCES backtest_runs(id) ON DELETE CASCADE,
+    UNIQUE KEY idx_backtest_date (backtest_id, snapshot_date)
+);
+
+-- Record version 6
+INSERT INTO schema_versions (version, description) VALUES (6, 'Backtesting engine');
+""",
 }
 
 
@@ -423,6 +511,9 @@ async def run_migrations(pool: DatabasePool) -> list[int]:
 async def reset_database(pool: DatabasePool) -> None:
     """Drop all tables and recreate schema. USE WITH CAUTION."""
     tables = [
+        "backtest_snapshots",
+        "backtest_trades",
+        "backtest_runs",
         "ask_responses",
         "ask_questions",
         "portfolio_snapshots",

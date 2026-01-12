@@ -3351,5 +3351,334 @@ def ask_show(
     formatter.display_question_detail(result)
 
 
+# ============================================================================
+# Backtest Commands
+# ============================================================================
+
+
+@app.command("backtest")
+def backtest_command(
+    ticker: str = typer.Argument(
+        ...,
+        help="Ticker symbol to backtest (e.g., 'AAPL')",
+    ),
+    start: Optional[str] = typer.Option(
+        None,
+        "--start",
+        help="Start date (YYYY-MM-DD)",
+    ),
+    end: Optional[str] = typer.Option(
+        None,
+        "--end",
+        help="End date (YYYY-MM-DD)",
+    ),
+    period: Optional[str] = typer.Option(
+        None,
+        "--period",
+        "-p",
+        help="Period shorthand: 1y, 2y, 6m, 3m (alternative to --start/--end)",
+    ),
+    benchmark: str = typer.Option(
+        "SPY",
+        "--benchmark",
+        "-b",
+        help="Benchmark ticker for comparison",
+    ),
+    strategy: str = typer.Option(
+        "signal",
+        "--strategy",
+        "-s",
+        help="Strategy type: 'signal' or 'threshold'",
+    ),
+    threshold: Optional[float] = typer.Option(
+        None,
+        "--threshold",
+        "-t",
+        help="Score threshold for threshold strategy (e.g., 50)",
+    ),
+    capital: float = typer.Option(
+        100000.0,
+        "--capital",
+        "-c",
+        help="Initial capital for backtest",
+    ),
+    agents: Optional[str] = typer.Option(
+        None,
+        "--agents",
+        "-a",
+        help="Specific agents to use (comma-separated IDs)",
+    ),
+    slippage: float = typer.Option(
+        0.1,
+        "--slippage",
+        help="Slippage percentage for trades",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show detailed output including all trades",
+    ),
+    export: Optional[str] = typer.Option(
+        None,
+        "--export",
+        "-e",
+        help="Export format: json",
+    ),
+    output_file: Optional[str] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Output file path for export",
+    ),
+) -> None:
+    """
+    Run a backtest on historical data.
+
+    Tests agent recommendations against historical prices and calculates
+    performance metrics.
+
+    Examples:
+        consilium backtest AAPL --period 2y
+        consilium backtest NVDA --start 2023-01-01 --end 2025-01-01
+        consilium backtest TSLA --strategy threshold --threshold 50
+        consilium backtest AAPL --benchmark QQQ --capital 50000
+        consilium backtest MSFT --agents buffett,simons --verbose
+    """
+    from datetime import date, datetime
+    from decimal import Decimal
+
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
+    from consilium.backtesting import BacktestEngine, BacktestStrategyType, parse_period
+    from consilium.output.backtest_formatter import BacktestFormatter
+    from consilium.db.connection import close_pool
+
+    settings = get_settings()
+
+    # Validate date parameters
+    if not period and not (start and end):
+        # Default to 1 year
+        period = "1y"
+
+    # Parse dates
+    if period:
+        try:
+            start_date, end_date = parse_period(period)
+        except ValueError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1)
+    else:
+        try:
+            start_date = datetime.strptime(start, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end, "%Y-%m-%d").date()
+        except ValueError:
+            console.print("[red]Error:[/red] Invalid date format. Use YYYY-MM-DD.")
+            raise typer.Exit(1)
+
+    # Parse strategy
+    try:
+        strategy_type = BacktestStrategyType(strategy.lower())
+    except ValueError:
+        console.print("[red]Error:[/red] Strategy must be 'signal' or 'threshold'.")
+        raise typer.Exit(1)
+
+    # Validate threshold for threshold strategy
+    if strategy_type == BacktestStrategyType.THRESHOLD and threshold is None:
+        threshold = 50.0
+        console.print(f"[dim]Using default threshold: {threshold}[/dim]")
+
+    # Parse agent filter
+    agent_filter = [a.strip().lower() for a in agents.split(",")] if agents else None
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Running backtest...", total=None)
+
+        async def run_backtest():
+            try:
+                engine = BacktestEngine(
+                    settings=settings,
+                    progress_callback=lambda msg: progress.update(task, description=msg),
+                )
+                return await engine.run(
+                    ticker=ticker.upper(),
+                    start_date=start_date,
+                    end_date=end_date,
+                    benchmark=benchmark.upper(),
+                    strategy=strategy_type,
+                    threshold=Decimal(str(threshold)) if threshold else None,
+                    initial_capital=Decimal(str(capital)),
+                    agent_filter=agent_filter,
+                    slippage_pct=Decimal(str(slippage)),
+                )
+            finally:
+                await close_pool()
+
+        try:
+            result = asyncio.run(run_backtest())
+        except Exception as e:
+            console.print(f"\n[red]Error during backtest:[/red] {e}")
+            raise typer.Exit(1)
+
+    # Display result
+    formatter = BacktestFormatter(console)
+    formatter.display_result(result, show_trades=verbose, max_trades=20)
+
+    # Export if requested
+    if export and export.lower() == "json":
+        import json
+        output_path = output_file or f"backtest_{ticker}_{start_date}_{end_date}.json"
+        with open(output_path, "w") as f:
+            # Convert to serializable dict
+            data = {
+                "ticker": result.ticker,
+                "benchmark": result.benchmark,
+                "start_date": str(result.start_date),
+                "end_date": str(result.end_date),
+                "strategy_type": result.strategy_type.value,
+                "initial_capital": float(result.initial_capital),
+                "final_value": float(result.final_value),
+                "metrics": {
+                    "total_return_pct": float(result.metrics.total_return_pct),
+                    "cagr": float(result.metrics.cagr),
+                    "sharpe_ratio": float(result.metrics.sharpe_ratio),
+                    "sortino_ratio": float(result.metrics.sortino_ratio),
+                    "max_drawdown": float(result.metrics.max_drawdown),
+                    "win_rate": float(result.metrics.win_rate),
+                    "profit_factor": float(result.metrics.profit_factor),
+                    "alpha": float(result.metrics.alpha),
+                    "beta": float(result.metrics.beta),
+                },
+                "trades": [
+                    {
+                        "date": str(t.trade_date),
+                        "type": t.trade_type.value,
+                        "price": float(t.price),
+                        "quantity": float(t.quantity),
+                        "realized_pnl": float(t.realized_pnl) if t.realized_pnl else None,
+                    }
+                    for t in result.trades
+                ],
+            }
+            json.dump(data, f, indent=2)
+        console.print(f"\n[green]Results exported to:[/green] {output_path}")
+
+
+@app.command("backtest-history")
+def backtest_history_command(
+    ticker: Optional[str] = typer.Option(
+        None,
+        "--ticker",
+        "-t",
+        help="Filter by ticker",
+    ),
+    strategy: Optional[str] = typer.Option(
+        None,
+        "--strategy",
+        "-s",
+        help="Filter by strategy type",
+    ),
+    limit: int = typer.Option(
+        20,
+        "--limit",
+        "-n",
+        help="Maximum number of results",
+    ),
+) -> None:
+    """
+    View history of previous backtests.
+
+    Examples:
+        consilium backtest-history
+        consilium backtest-history --ticker AAPL
+        consilium backtest-history --strategy threshold --limit 10
+    """
+    from consilium.backtesting import BacktestRepository, BacktestStrategyType
+    from consilium.output.backtest_formatter import BacktestFormatter
+    from consilium.db.connection import close_pool
+
+    settings = get_settings()
+
+    # Parse strategy filter
+    strategy_filter = None
+    if strategy:
+        try:
+            strategy_filter = BacktestStrategyType(strategy.lower())
+        except ValueError:
+            console.print("[red]Error:[/red] Strategy must be 'signal' or 'threshold'.")
+            raise typer.Exit(1)
+
+    async def fetch_history():
+        try:
+            repo = BacktestRepository(settings)
+            return await repo.list_backtests(
+                ticker=ticker.upper() if ticker else None,
+                strategy=strategy_filter,
+                limit=limit,
+            )
+        finally:
+            await close_pool()
+
+    try:
+        backtests = asyncio.run(fetch_history())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    formatter = BacktestFormatter(console)
+    formatter.display_history(backtests)
+
+
+@app.command("backtest-show")
+def backtest_show_command(
+    backtest_id: int = typer.Argument(
+        ...,
+        help="Backtest ID to show",
+    ),
+    all_trades: bool = typer.Option(
+        False,
+        "--all-trades",
+        help="Show all trades (not just first/last 20)",
+    ),
+) -> None:
+    """
+    Show details of a specific backtest.
+
+    Examples:
+        consilium backtest-show 1
+        consilium backtest-show 5 --all-trades
+    """
+    from consilium.backtesting import BacktestRepository
+    from consilium.output.backtest_formatter import BacktestFormatter
+    from consilium.db.connection import close_pool
+
+    settings = get_settings()
+
+    async def fetch_backtest():
+        try:
+            repo = BacktestRepository(settings)
+            return await repo.get_backtest(backtest_id)
+        finally:
+            await close_pool()
+
+    try:
+        result = asyncio.run(fetch_backtest())
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+    if not result:
+        console.print(f"[yellow]Backtest with ID {backtest_id} not found.[/yellow]")
+        raise typer.Exit(1)
+
+    formatter = BacktestFormatter(console)
+    max_trades = 1000 if all_trades else 20
+    formatter.display_result(result, show_trades=True, max_trades=max_trades)
+
+
 if __name__ == "__main__":
     app()
