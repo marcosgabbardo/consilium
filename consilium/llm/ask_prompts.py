@@ -121,67 +121,78 @@ Remember: You are answering as this investor would, based on their known philoso
         """Format stock data for inclusion in prompt."""
         parts = []
 
-        parts.append(f"### {stock.ticker} - {stock.name}")
-        parts.append(f"**Sector:** {stock.sector} | **Industry:** {stock.industry}")
+        # Company info
+        company_name = stock.company.name if stock.company else stock.ticker
+        sector = stock.company.sector if stock.company else "N/A"
+        industry = stock.company.industry if stock.company else "N/A"
+
+        parts.append(f"### {stock.ticker} - {company_name}")
+        parts.append(f"**Sector:** {sector} | **Industry:** {industry}")
 
         # Price data
-        if stock.current_price:
-            parts.append(f"\n**Current Price:** ${stock.current_price:.2f}")
-            if stock.change_percent:
-                sign = "+" if stock.change_percent >= 0 else ""
-                parts.append(f" ({sign}{stock.change_percent:.2f}%)")
+        if stock.price and stock.price.current:
+            parts.append(f"\n**Current Price:** ${stock.price.current:.2f}")
+            if stock.price.change_percent:
+                sign = "+" if stock.price.change_percent >= 0 else ""
+                parts.append(f" ({sign}{stock.price.change_percent:.2f}%)")
 
-        if stock.week_52_high and stock.week_52_low:
+        if stock.price and stock.price.fifty_two_week_high and stock.price.fifty_two_week_low:
             parts.append(
-                f"\n**52-Week Range:** ${stock.week_52_low:.2f} - ${stock.week_52_high:.2f}"
+                f"\n**52-Week Range:** ${stock.price.fifty_two_week_low:.2f} - ${stock.price.fifty_two_week_high:.2f}"
             )
 
         # Key fundamentals
-        fundamentals = []
-        if stock.pe_ratio:
-            fundamentals.append(f"P/E: {stock.pe_ratio:.1f}")
-        if stock.forward_pe:
-            fundamentals.append(f"Fwd P/E: {stock.forward_pe:.1f}")
-        if stock.peg_ratio:
-            fundamentals.append(f"PEG: {stock.peg_ratio:.2f}")
-        if stock.price_to_book:
-            fundamentals.append(f"P/B: {stock.price_to_book:.2f}")
-        if stock.market_cap:
-            cap_b = stock.market_cap / 1_000_000_000
-            fundamentals.append(f"Market Cap: ${cap_b:.1f}B")
+        fundamentals_list = []
+        if stock.fundamentals:
+            f = stock.fundamentals
+            if f.pe_ratio:
+                fundamentals_list.append(f"P/E: {f.pe_ratio:.1f}")
+            if f.forward_pe:
+                fundamentals_list.append(f"Fwd P/E: {f.forward_pe:.1f}")
+            if f.peg_ratio:
+                fundamentals_list.append(f"PEG: {f.peg_ratio:.2f}")
+            if f.price_to_book:
+                fundamentals_list.append(f"P/B: {f.price_to_book:.2f}")
+            if f.market_cap:
+                cap_b = f.market_cap / 1_000_000_000
+                fundamentals_list.append(f"Market Cap: ${cap_b:.1f}B")
 
-        if fundamentals:
-            parts.append(f"\n**Fundamentals:** {' | '.join(fundamentals)}")
+        if fundamentals_list:
+            parts.append(f"\n**Fundamentals:** {' | '.join(fundamentals_list)}")
 
         # Performance
         performance = []
-        if stock.roe:
-            performance.append(f"ROE: {stock.roe:.1f}%")
-        if stock.profit_margin:
-            performance.append(f"Profit Margin: {stock.profit_margin:.1f}%")
-        if stock.revenue_growth:
-            performance.append(f"Rev Growth: {stock.revenue_growth:.1f}%")
-        if stock.earnings_growth:
-            performance.append(f"Earnings Growth: {stock.earnings_growth:.1f}%")
+        if stock.fundamentals:
+            f = stock.fundamentals
+            if f.roe:
+                performance.append(f"ROE: {f.roe:.1f}%")
+            if f.profit_margin:
+                performance.append(f"Profit Margin: {f.profit_margin:.1f}%")
+            if f.revenue_growth:
+                performance.append(f"Rev Growth: {f.revenue_growth:.1f}%")
+            if f.earnings_growth:
+                performance.append(f"Earnings Growth: {f.earnings_growth:.1f}%")
 
         if performance:
             parts.append(f"\n**Performance:** {' | '.join(performance)}")
 
         # Dividend
-        if stock.dividend_yield and stock.dividend_yield > 0:
-            parts.append(f"\n**Dividend Yield:** {stock.dividend_yield:.2f}%")
+        if stock.fundamentals and stock.fundamentals.dividend_yield and stock.fundamentals.dividend_yield > 0:
+            parts.append(f"\n**Dividend Yield:** {stock.fundamentals.dividend_yield:.2f}%")
 
         # Technical indicators (brief)
-        technicals = []
-        if stock.rsi:
-            technicals.append(f"RSI: {stock.rsi:.0f}")
-        if stock.beta:
-            technicals.append(f"Beta: {stock.beta:.2f}")
-        if stock.trend:
-            technicals.append(f"Trend: {stock.trend}")
+        technicals_list = []
+        if stock.technicals:
+            t = stock.technicals
+            if t.rsi_14:
+                technicals_list.append(f"RSI: {t.rsi_14:.0f}")
+            if t.trend:
+                technicals_list.append(f"Trend: {t.trend}")
+        if stock.fundamentals and stock.fundamentals.beta:
+            technicals_list.append(f"Beta: {stock.fundamentals.beta:.2f}")
 
-        if technicals:
-            parts.append(f"\n**Technicals:** {' | '.join(technicals)}")
+        if technicals_list:
+            parts.append(f"\n**Technicals:** {' | '.join(technicals_list)}")
 
         return "\n".join(parts)
 

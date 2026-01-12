@@ -27,15 +27,12 @@ universe_app = typer.Typer(help="Stock universe management commands")
 portfolio_app = typer.Typer(help="Portfolio management commands")
 history_app = typer.Typer(help="Analysis history commands")
 db_app = typer.Typer(help="Database management commands")
-ask_app = typer.Typer(help="Ask investor agents questions directly")
-
 app.add_typer(agents_app, name="agents")
 app.add_typer(watchlist_app, name="watchlist")
 app.add_typer(universe_app, name="universe")
 app.add_typer(portfolio_app, name="portfolio")
 app.add_typer(history_app, name="history")
 app.add_typer(db_app, name="db")
-app.add_typer(ask_app, name="ask")
 
 
 def version_callback(value: bool) -> None:
@@ -3136,11 +3133,10 @@ def status() -> None:
 # ============================================================================
 
 
-@ask_app.callback(invoke_without_command=True)
+@app.command("ask")
 def ask_question(
-    ctx: typer.Context,
-    question: Optional[str] = typer.Argument(
-        None,
+    question: str = typer.Argument(
+        ...,
         help="Your question for the investor(s)",
     ),
     agent: Optional[str] = typer.Option(
@@ -3182,17 +3178,6 @@ def ask_question(
         consilium ask "Devo comprar IBIT e shortar MSTR?" --agents buffett,simons
         consilium ask "O que você pensa sobre IA?" --agent buffett --no-data
     """
-    # Skip if a subcommand was invoked
-    if ctx.invoked_subcommand is not None:
-        return
-
-    if not question:
-        console.print("[yellow]Usage:[/yellow] consilium ask \"Your question\" --agent <agent_id>")
-        console.print("\nExamples:")
-        console.print('  consilium ask "O que você acha de TSLA?" --agent buffett')
-        console.print('  consilium ask "Vale investir em AAPL?" --agents buffett,munger')
-        console.print("\nUse [cyan]consilium ask --help[/cyan] for more options.")
-        raise typer.Exit(0)
 
     settings = get_settings()
 
@@ -3286,7 +3271,7 @@ def ask_question(
         formatter.display_comparison(result)
 
 
-@ask_app.command("history")
+@app.command("ask-history")
 def ask_history(
     agent: Optional[str] = typer.Option(
         None,
@@ -3330,7 +3315,7 @@ def ask_history(
     formatter.display_history(questions, title=title)
 
 
-@ask_app.command("show")
+@app.command("ask-show")
 def ask_show(
     question_id: int = typer.Argument(
         ...,
